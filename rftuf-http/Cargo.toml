@@ -1,0 +1,27 @@
+[package]
+name = "rftuf-http"
+version = "0.1.0"
+description = "An HTTP transport for the rftuf TUF client, built on reqwest"
+edition.workspace = true
+rust-version.workspace = true
+
+[features]
+default = ["rustls"]
+# TLS implementation used by the default client.
+rustls = ["reqwest/rustls"]
+native-tls = ["reqwest/native-tls"]
+
+[dependencies]
+futures-util.workspace = true
+reqwest = { version = "0.13", default-features = false, features = ["http2", "system-proxy"] }
+rftuf.workspace = true
+url = "2"
+
+[dev-dependencies]
+bytes.workspace = true
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+http-body-util = "0.1"
+hyper = { version = "1", features = ["http1", "server"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+tempfile.workspace = true
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread"] }
