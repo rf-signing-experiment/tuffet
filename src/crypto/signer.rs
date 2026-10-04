@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use super::{CryptoError, backend};
+use super::{Algorithm, CryptoError, backend, check_rsa_key_size, decode_pem};
 use crate::metadata::{Key, SignatureScheme};
 
 /// Something that can sign metadata.
@@ -29,7 +29,15 @@ impl PrivateKey {
     ///
     /// RSA keys are 3072 bits.
     pub fn generate(scheme: &SignatureScheme) -> Result<Self, CryptoError> {
-        Self::from_backend(backend::SigningKey::generate(scheme)?)
+        let algorithm =
+            Algorithm::from_scheme(scheme).ok_or_else(|| CryptoError::UnsupportedScheme {
+                keytype: scheme
+                    .key_type()
+                    .map(|kt| kt.to_string())
+                    .unwrap_or_default(),
+                scheme: scheme.to_string(),
+            })?;
+        Self::from_backend(backend::SigningKey::generate(algorithm)?)
     }
 
     /// Loads a DER-encoded PKCS#8 private key (Ed25519, ECDSA P-256/P-384 or RSA).
@@ -39,13 +47,22 @@ impl PrivateKey {
 
     /// Loads a PEM-encoded PKCS#8 private key (`-----BEGIN PRIVATE KEY-----`).
     pub fn from_pkcs8_pem(pem: &str) -> Result<Self, CryptoError> {
-        Self::from_backend(backend::SigningKey::from_pkcs8_pem(pem)?)
+        let der = decode_pem(pem, "PRIVATE KEY").map_err(CryptoError::InvalidPrivateKey)?;
+        Self::from_pkcs8_der(&der)
     }
 
     fn from_backend(inner: backend::SigningKey) -> Result<Self, CryptoError> {
-        let scheme = inner.scheme();
-        let keytype = scheme.key_type().expect("backend keys use known schemes");
-        let public = Key::new(keytype, scheme, inner.public_key()?);
+        let algorithm = inner.algorithm();
+        let public_key = inner.public_key()?;
+        if algorithm == Algorithm::RsaPssSha256 {
+            check_rsa_key_size(backend::rsa_modulus_bits(&public_key)?)
+                .map_err(CryptoError::InvalidPrivateKey)?;
+        }
+        let public = Key::new(
+            algorithm.key_type(),
+            algorithm.scheme(),
+            algorithm.encode_public_key(&public_key),
+        );
         Ok(PrivateKey { inner, public })
     }
 }

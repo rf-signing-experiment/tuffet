@@ -57,12 +57,7 @@ fn rsa_keys_sign_and_verify() {
 
 #[test]
 fn verifies_signatures_made_by_openssl() {
-    let cases: [(SignatureScheme, &[u8], &[u8]); 5] = [
-        (
-            SignatureScheme::RsassaPssSha256,
-            vector!("rsa.pub.pem"),
-            vector!("rsa-pss-saltmax.sig"),
-        ),
+    let cases: [(SignatureScheme, &[u8], &[u8]); 4] = [
         (
             SignatureScheme::RsassaPssSha256,
             vector!("rsa.pub.pem"),
@@ -88,6 +83,19 @@ fn verifies_signatures_made_by_openssl() {
         let key = key(scheme, public);
         verify_signature(&key, MESSAGE, signature).unwrap();
         assert!(verify_signature(&key, b"something else", signature).is_err());
+    }
+}
+
+/// RSA-PSS signatures whose salt is longer than the digest (OpenSSL's
+/// default) only verify with the `rustcrypto` backend; see the module docs.
+#[test]
+fn rsa_pss_salt_lengths_other_than_the_digest_length() {
+    let key = key(SignatureScheme::RsassaPssSha256, vector!("rsa.pub.pem"));
+    let result = verify_signature(&key, MESSAGE, vector!("rsa-pss-saltmax.sig"));
+    if cfg!(feature = "aws-lc-rs") {
+        assert!(matches!(result, Err(CryptoError::BadSignature)));
+    } else {
+        result.unwrap();
     }
 }
 
@@ -117,7 +125,7 @@ fn loads_pkcs8_keys_made_by_openssl() {
         vector!("rsa.key.pem"),
         SignatureScheme::RsassaPssSha256,
         vector!("rsa.pub.pem"),
-        vector!("rsa-pss-saltmax.sig"),
+        vector!("rsa-pss-saltdigest.sig"),
     );
     check(
         vector!("p256.key.pem"),
@@ -147,6 +155,11 @@ fn loads_pkcs8_keys_made_by_openssl() {
         PrivateKey::from_pkcs8_der(b"not a key"),
         Err(CryptoError::InvalidPrivateKey(_))
     ));
+    // A public key is not a private key.
+    assert!(matches!(
+        PrivateKey::from_pkcs8_pem(&text(vector!("p256.pub.pem"))),
+        Err(CryptoError::InvalidPrivateKey(message)) if message.contains("PRIVATE KEY")
+    ));
 }
 
 #[test]
@@ -156,6 +169,32 @@ fn rejects_rsa_keys_below_2048_bits() {
     assert!(
         matches!(result, Err(CryptoError::InvalidPublicKey(message)) if message.contains("2048"))
     );
+}
+
+#[test]
+fn accepts_rsa_keys_of_2048_to_8192_bits() {
+    assert!(check_rsa_key_size(2047).is_err());
+    assert!(check_rsa_key_size(2048).is_ok());
+    assert!(check_rsa_key_size(8192).is_ok());
+    assert!(check_rsa_key_size(8193).is_err());
+}
+
+#[test]
+fn public_keys_must_be_pem_encoded_subject_public_key_info() {
+    let pem = text(vector!("rsa.pub.pem"));
+    let pkcs1_label = pem.replace("PUBLIC KEY", "RSA PUBLIC KEY");
+    let pkcs1 = key(SignatureScheme::RsassaPssSha256, pkcs1_label.as_bytes());
+    let result = verify_signature(&pkcs1, MESSAGE, vector!("rsa-pss-saltdigest.sig"));
+    assert!(
+        matches!(result, Err(CryptoError::InvalidPublicKey(message)) if message.contains("label"))
+    );
+
+    // A P-256 key cannot be used as a P-384 key.
+    let wrong_curve = key(SignatureScheme::EcdsaSha2Nistp384, vector!("p256.pub.pem"));
+    assert!(matches!(
+        verify_signature(&wrong_curve, MESSAGE, vector!("p256.sig")),
+        Err(CryptoError::InvalidPublicKey(_))
+    ));
 }
 
 #[test]
@@ -181,7 +220,7 @@ fn rejects_malformed_keys_and_signatures() {
     let ed25519 = key(SignatureScheme::Ed25519, vector!("ed25519.pub.hex"));
     assert!(matches!(
         verify_signature(&ed25519, MESSAGE, &[0; 63]),
-        Err(CryptoError::MalformedSignature)
+        Err(CryptoError::BadSignature)
     ));
     let short_key = key(SignatureScheme::Ed25519, b"abcd");
     assert!(matches!(
@@ -193,7 +232,7 @@ fn rejects_malformed_keys_and_signatures() {
     let p256 = key(SignatureScheme::EcdsaSha2Nistp256, vector!("p256.pub.pem"));
     assert!(matches!(
         verify_signature(&p256, MESSAGE, &[1; 64]),
-        Err(CryptoError::MalformedSignature)
+        Err(CryptoError::BadSignature)
     ));
     let garbage = key(
         SignatureScheme::EcdsaSha2Nistp256,
@@ -225,4 +264,46 @@ fn hashes_match_known_digests() {
         Some(HashAlgorithm::Sha512)
     );
     assert_eq!(HashAlgorithm::from_name("md5"), None);
+}
+
+/// With both backends compiled in, checks that they agree with each other.
+#[cfg(all(feature = "rustcrypto", feature = "aws-lc-rs"))]
+mod backend_parity {
+    use super::super::{HashAlgorithm, aws_lc, decode_pem, rustcrypto};
+    use super::{MESSAGE, text};
+
+    #[test]
+    fn backends_derive_the_same_keys_and_verify_each_others_signatures() {
+        let keys: [&[u8]; 4] = [
+            vector!("ed25519.key.pem"),
+            vector!("p256.key.pem"),
+            vector!("p384.key.pem"),
+            vector!("rsa.key.pem"),
+        ];
+        for private in keys {
+            let der = decode_pem(&text(private), "PRIVATE KEY").unwrap();
+            let rustcrypto = rustcrypto::SigningKey::from_pkcs8_der(&der).unwrap();
+            let aws_lc = aws_lc::SigningKey::from_pkcs8_der(&der).unwrap();
+            let algorithm = rustcrypto.algorithm();
+            assert_eq!(aws_lc.algorithm(), algorithm);
+            let public = rustcrypto.public_key().unwrap();
+            assert_eq!(aws_lc.public_key().unwrap(), public, "{algorithm:?}");
+
+            let signature = rustcrypto.sign(MESSAGE).unwrap();
+            aws_lc::verify(algorithm, &public, MESSAGE, &signature).unwrap();
+            let signature = aws_lc.sign(MESSAGE).unwrap();
+            rustcrypto::verify(algorithm, &public, MESSAGE, &signature).unwrap();
+        }
+    }
+
+    #[test]
+    fn backends_compute_the_same_digests() {
+        for algorithm in HashAlgorithm::ALL {
+            let mut rustcrypto = rustcrypto::Hasher::new(algorithm);
+            let mut aws_lc = aws_lc::Hasher::new(algorithm);
+            rustcrypto.update(MESSAGE);
+            aws_lc.update(MESSAGE);
+            assert_eq!(rustcrypto.finalize(), aws_lc.finalize());
+        }
+    }
 }

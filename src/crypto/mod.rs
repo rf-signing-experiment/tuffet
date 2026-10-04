@@ -1,38 +1,68 @@
 //! Cryptographic operations: hashing, signature verification and signing.
 //!
 //! This module is the only part of the crate that touches cryptography; all
-//! other modules use the backend-neutral API defined here. The primitives are
-//! implemented by a backend module selected at compile time with a cargo
-//! feature. The only backend today is `rustcrypto` (the default).
+//! other modules use the backend-neutral API defined here. This module also
+//! owns the TUF-specific rules: which schemes exist, how `keyval.public`
+//! strings encode keys (hex for Ed25519, PEM for ECDSA and RSA), and the
+//! allowed RSA key sizes. The primitives themselves come from a backend
+//! module selected with a cargo feature:
+//!
+//! - `rustcrypto` (default): the RustCrypto crates.
+//! - `aws-lc-rs`: [AWS-LC](https://github.com/aws/aws-lc) through `aws-lc-rs`.
+//!   It takes precedence if both features are enabled; disable default
+//!   features to avoid building the RustCrypto crates. For FIPS mode, enable
+//!   the `fips` feature of `aws-lc-rs` in your own manifest.
+//!
+//! The backends behave identically, except that the `aws-lc-rs` backend only
+//! verifies RSA-PSS signatures whose salt is as long as the digest, the
+//! length that python-tuf, go-tuf and this crate sign with. (`aws-lc-rs`
+//! does not support other lengths; the `rustcrypto` backend accepts any.)
 //!
 //! # Adding a backend
 //!
-//! A backend is a module that provides the same items as `rustcrypto.rs`:
+//! A backend is a module that provides these items (see `rustcrypto.rs` and
+//! `aws_lc.rs`), gated behind a new cargo feature and selected below:
 //!
 //! - `Hasher`, with `new(HashAlgorithm)`, `update(&mut self, &[u8])` and
-//!   `finalize(self) -> Vec<u8>`;
-//! - `verify(&SignatureScheme, public_key: &str, message, signature)`, which
-//!   decodes the TUF `keyval.public` string for the scheme and verifies;
-//! - `SigningKey`, with `generate`, `from_pkcs8_der`, `from_pkcs8_pem`,
-//!   `scheme`, `public_key` and `sign`.
-//!
-//! Gate it behind a new cargo feature and select it below.
+//!   `finalize(self) -> Vec<u8>`.
+//! - `verify(Algorithm, public_key: &[u8], message, signature)`. Ed25519
+//!   public keys are the raw 32 bytes; ECDSA and RSA public keys are DER
+//!   `SubjectPublicKeyInfo`; ECDSA signatures are DER. Fails with
+//!   `InvalidPublicKey` or `BadSignature`.
+//! - `rsa_modulus_bits(public_key: &[u8]) -> Result<usize, CryptoError>`.
+//! - `SigningKey`, with `generate(Algorithm)`, `from_pkcs8_der(&[u8])`,
+//!   `algorithm(&self)`, `public_key(&self)` (encoded as for `verify`) and
+//!   `sign(&self, message)`. Generated RSA keys have 3072 bits, and RSA-PSS
+//!   signatures use a digest-length salt.
 
 use std::error::Error as StdError;
+use std::ops::RangeInclusive;
 
-use crate::metadata::{Key, SignatureScheme};
+use crate::metadata::{Key, KeyType, SignatureScheme};
 
 mod signer;
 
 pub use signer::{PrivateKey, Signer};
 
-#[cfg(not(feature = "rustcrypto"))]
-compile_error!("rftuf needs a cryptography backend: enable the `rustcrypto` feature");
+#[cfg(not(any(feature = "rustcrypto", feature = "aws-lc-rs")))]
+compile_error!("rftuf needs a cryptography backend: enable `rustcrypto` or `aws-lc-rs`");
 
+#[cfg(feature = "aws-lc-rs")]
+mod aws_lc;
+#[cfg(feature = "aws-lc-rs")]
+use aws_lc as backend;
+
+// With both features, the RustCrypto backend is compiled but only used by
+// tests that compare the two backends.
 #[cfg(feature = "rustcrypto")]
+#[cfg_attr(feature = "aws-lc-rs", allow(dead_code))]
 mod rustcrypto;
-#[cfg(feature = "rustcrypto")]
+#[cfg(all(feature = "rustcrypto", not(feature = "aws-lc-rs")))]
 use rustcrypto as backend;
+
+/// RSA key sizes, in bits, that are accepted. The specification requires at
+/// least 2048 bits; the upper bound limits the cost of verification.
+const RSA_KEY_BITS: RangeInclusive<usize> = 2048..=8192;
 
 /// Errors from cryptographic operations.
 #[derive(Debug, thiserror::Error)]
@@ -42,7 +72,7 @@ pub enum CryptoError {
     #[error("unsupported key type {keytype:?} with signature scheme {scheme:?}")]
     UnsupportedScheme { keytype: String, scheme: String },
 
-    /// A public key could not be decoded, or is too weak.
+    /// A public key could not be decoded, or has an unacceptable size.
     #[error("invalid public key: {0}")]
     InvalidPublicKey(String),
 
@@ -50,11 +80,7 @@ pub enum CryptoError {
     #[error("invalid private key: {0}")]
     InvalidPrivateKey(String),
 
-    /// A signature is not correctly encoded for its scheme.
-    #[error("malformed signature")]
-    MalformedSignature,
-
-    /// A signature does not verify.
+    /// A signature is malformed or does not verify.
     #[error("signature verification failed")]
     BadSignature,
 
@@ -119,30 +145,108 @@ impl Hasher {
 /// The key's `keytype` must match its `scheme`. Supported combinations are
 /// those defined by the specification (`ed25519`/`ed25519`,
 /// `ecdsa`/`ecdsa-sha2-nistp256`, `rsa`/`rsassa-pss-sha256`) and
-/// `ecdsa`/`ecdsa-sha2-nistp384`. RSA keys must be at least 2048 bits, ECDSA
-/// signatures are DER-encoded, and RSA-PSS accepts any salt length.
+/// `ecdsa`/`ecdsa-sha2-nistp384`. ECDSA and RSA public keys are PEM-encoded
+/// `SubjectPublicKeyInfo`, RSA keys must have 2048 to 8192 bits, and ECDSA
+/// signatures are DER-encoded.
 pub fn verify_signature(key: &Key, message: &[u8], signature: &[u8]) -> Result<(), CryptoError> {
-    if key.scheme.key_type().as_ref() != Some(&key.keytype) {
-        return Err(unsupported(key));
-    }
-    backend::verify(&key.scheme, &key.keyval.public, message, signature)
+    let algorithm = Algorithm::from_scheme(&key.scheme)
+        .filter(|algorithm| algorithm.key_type() == key.keytype)
+        .ok_or_else(|| CryptoError::UnsupportedScheme {
+            keytype: key.keytype.as_str().to_owned(),
+            scheme: key.scheme.as_str().to_owned(),
+        })?;
+    let public_key = algorithm.decode_public_key(&key.keyval.public)?;
+    backend::verify(algorithm, &public_key, message, signature)
 }
 
-fn unsupported(key: &Key) -> CryptoError {
-    CryptoError::UnsupportedScheme {
-        keytype: key.keytype.as_str().to_owned(),
-        scheme: key.scheme.as_str().to_owned(),
+/// The signature algorithms that backends implement.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Algorithm {
+    Ed25519,
+    EcdsaP256Sha256,
+    EcdsaP384Sha384,
+    RsaPssSha256,
+}
+
+impl Algorithm {
+    fn from_scheme(scheme: &SignatureScheme) -> Option<Self> {
+        match scheme {
+            SignatureScheme::Ed25519 => Some(Algorithm::Ed25519),
+            SignatureScheme::EcdsaSha2Nistp256 => Some(Algorithm::EcdsaP256Sha256),
+            SignatureScheme::EcdsaSha2Nistp384 => Some(Algorithm::EcdsaP384Sha384),
+            SignatureScheme::RsassaPssSha256 => Some(Algorithm::RsaPssSha256),
+            SignatureScheme::Other(_) => None,
+        }
+    }
+
+    fn scheme(self) -> SignatureScheme {
+        match self {
+            Algorithm::Ed25519 => SignatureScheme::Ed25519,
+            Algorithm::EcdsaP256Sha256 => SignatureScheme::EcdsaSha2Nistp256,
+            Algorithm::EcdsaP384Sha384 => SignatureScheme::EcdsaSha2Nistp384,
+            Algorithm::RsaPssSha256 => SignatureScheme::RsassaPssSha256,
+        }
+    }
+
+    fn key_type(self) -> KeyType {
+        match self {
+            Algorithm::Ed25519 => KeyType::Ed25519,
+            Algorithm::EcdsaP256Sha256 | Algorithm::EcdsaP384Sha384 => KeyType::Ecdsa,
+            Algorithm::RsaPssSha256 => KeyType::Rsa,
+        }
+    }
+
+    /// Decodes a `keyval.public` string into the form backends take.
+    fn decode_public_key(self, encoded: &str) -> Result<Vec<u8>, CryptoError> {
+        if self == Algorithm::Ed25519 {
+            return hex::decode(encoded)
+                .ok()
+                .filter(|key| key.len() == 32)
+                .ok_or_else(|| {
+                    CryptoError::InvalidPublicKey(
+                        "ed25519 public keys must be 32 hex-encoded bytes".into(),
+                    )
+                });
+        }
+        let key = decode_pem(encoded, "PUBLIC KEY").map_err(CryptoError::InvalidPublicKey)?;
+        if self == Algorithm::RsaPssSha256 {
+            check_rsa_key_size(backend::rsa_modulus_bits(&key)?)
+                .map_err(CryptoError::InvalidPublicKey)?;
+        }
+        Ok(key)
+    }
+
+    /// Encodes a public key from a backend as a `keyval.public` string.
+    fn encode_public_key(self, key: &[u8]) -> String {
+        match self {
+            Algorithm::Ed25519 => hex::encode(key),
+            _ => pem_rfc7468::encode_string("PUBLIC KEY", pem_rfc7468::LineEnding::LF, key)
+                .expect("PEM encoding of in-memory data cannot fail"),
+        }
     }
 }
 
-/// The error for a scheme the backend does not implement.
-fn unsupported_scheme(scheme: &SignatureScheme) -> CryptoError {
-    CryptoError::UnsupportedScheme {
-        keytype: scheme
-            .key_type()
-            .map_or_else(String::new, |kt| kt.as_str().to_owned()),
-        scheme: scheme.as_str().to_owned(),
+/// Decodes PEM with the expected label, such as `PUBLIC KEY`.
+fn decode_pem(pem: &str, expected_label: &str) -> Result<Vec<u8>, String> {
+    let (label, der) = pem_rfc7468::decode_vec(pem.trim().as_bytes())
+        .map_err(|error| format!("invalid PEM: {error}"))?;
+    if label != expected_label {
+        return Err(format!(
+            "expected PEM label {expected_label:?}, found {label:?}"
+        ));
     }
+    Ok(der)
+}
+
+fn check_rsa_key_size(bits: usize) -> Result<(), String> {
+    if !RSA_KEY_BITS.contains(&bits) {
+        return Err(format!(
+            "RSA keys must have {} to {} bits, got {bits}",
+            RSA_KEY_BITS.start(),
+            RSA_KEY_BITS.end()
+        ));
+    }
+    Ok(())
 }
 
 #[cfg(test)]

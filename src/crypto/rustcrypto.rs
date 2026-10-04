@@ -4,18 +4,14 @@ use ed25519_dalek as ed25519;
 use getrandom::SysRng;
 use p256::elliptic_curve::Generate;
 use rand_core::UnwrapErr;
-use rsa::pkcs1::DecodeRsaPublicKey;
-use rsa::pkcs8::{DecodePrivateKey, DecodePublicKey, EncodePublicKey, LineEnding};
+use rsa::pkcs8::{DecodePrivateKey, DecodePublicKey, EncodePublicKey};
 use rsa::signature::{RandomizedSigner, SignatureEncoding, Signer as _, Verifier as _};
 use rsa::traits::PublicKeyParts;
 use rsa::{RsaPrivateKey, RsaPublicKey};
 use sha2::{Digest, Sha256, Sha512};
 
-use super::{CryptoError, HashAlgorithm, unsupported_scheme};
-use crate::metadata::SignatureScheme;
+use super::{Algorithm, CryptoError, HashAlgorithm};
 
-/// The specification requires RSA keys of at least 2048 bits.
-const MIN_RSA_BITS: usize = 2048;
 const GENERATED_RSA_BITS: usize = 3072;
 
 pub(super) enum Hasher {
@@ -47,77 +43,46 @@ impl Hasher {
 }
 
 pub(super) fn verify(
-    scheme: &SignatureScheme,
-    public_key: &str,
+    algorithm: Algorithm,
+    public_key: &[u8],
     message: &[u8],
     signature: &[u8],
 ) -> Result<(), CryptoError> {
-    match scheme {
-        SignatureScheme::Ed25519 => verify_ed25519(public_key, message, signature),
-        SignatureScheme::EcdsaSha2Nistp256 => verify_p256(public_key, message, signature),
-        SignatureScheme::EcdsaSha2Nistp384 => verify_p384(public_key, message, signature),
-        SignatureScheme::RsassaPssSha256 => verify_rsa_pss_sha256(public_key, message, signature),
-        other => Err(unsupported_scheme(other)),
-    }
+    let result = match algorithm {
+        Algorithm::Ed25519 => {
+            let public_key = public_key.try_into().map_err(invalid_public_key)?;
+            let key = ed25519::VerifyingKey::from_bytes(public_key).map_err(invalid_public_key)?;
+            let Ok(signature) = ed25519::Signature::from_slice(signature) else {
+                return Err(CryptoError::BadSignature);
+            };
+            key.verify_strict(message, &signature)
+        }
+        Algorithm::EcdsaP256Sha256 => {
+            use p256::ecdsa::{Signature, VerifyingKey};
+            let key = VerifyingKey::from_public_key_der(public_key).map_err(invalid_public_key)?;
+            Signature::from_der(signature).and_then(|signature| key.verify(message, &signature))
+        }
+        Algorithm::EcdsaP384Sha384 => {
+            use p384::ecdsa::{Signature, VerifyingKey};
+            let key = VerifyingKey::from_public_key_der(public_key).map_err(invalid_public_key)?;
+            Signature::from_der(signature).and_then(|signature| key.verify(message, &signature))
+        }
+        Algorithm::RsaPssSha256 => {
+            let key = RsaPublicKey::from_public_key_der(public_key).map_err(invalid_public_key)?;
+            // Signers disagree on the PSS salt length (python-tuf and go-tuf
+            // use the digest length, OpenSSL defaults to the maximum), so
+            // detect it.
+            let key = rsa::pss::VerifyingKey::<Sha256>::new_with_auto_salt_len(key);
+            rsa::pss::Signature::try_from(signature)
+                .and_then(|signature| key.verify(message, &signature))
+        }
+    };
+    result.map_err(|_| CryptoError::BadSignature)
 }
 
-fn verify_ed25519(public_key: &str, message: &[u8], signature: &[u8]) -> Result<(), CryptoError> {
-    let bytes: [u8; ed25519::PUBLIC_KEY_LENGTH] = hex::decode(public_key)
-        .ok()
-        .and_then(|bytes| bytes.try_into().ok())
-        .ok_or_else(|| invalid_public_key("ed25519 public keys must be 32 hex-encoded bytes"))?;
-    let key = ed25519::VerifyingKey::from_bytes(&bytes).map_err(invalid_public_key)?;
-    let signature =
-        ed25519::Signature::from_slice(signature).map_err(|_| CryptoError::MalformedSignature)?;
-    key.verify_strict(message, &signature)
-        .map_err(|_| CryptoError::BadSignature)
-}
-
-fn verify_p256(public_key: &str, message: &[u8], signature: &[u8]) -> Result<(), CryptoError> {
-    use p256::ecdsa::{Signature, VerifyingKey};
-    let key = VerifyingKey::from_public_key_pem(public_key.trim()).map_err(invalid_public_key)?;
-    let signature = Signature::from_der(signature).map_err(|_| CryptoError::MalformedSignature)?;
-    key.verify(message, &signature)
-        .map_err(|_| CryptoError::BadSignature)
-}
-
-fn verify_p384(public_key: &str, message: &[u8], signature: &[u8]) -> Result<(), CryptoError> {
-    use p384::ecdsa::{Signature, VerifyingKey};
-    let key = VerifyingKey::from_public_key_pem(public_key.trim()).map_err(invalid_public_key)?;
-    let signature = Signature::from_der(signature).map_err(|_| CryptoError::MalformedSignature)?;
-    key.verify(message, &signature)
-        .map_err(|_| CryptoError::BadSignature)
-}
-
-fn verify_rsa_pss_sha256(
-    public_key: &str,
-    message: &[u8],
-    signature: &[u8],
-) -> Result<(), CryptoError> {
-    let key = decode_rsa_public_key(public_key)?;
-    // Signers disagree on the PSS salt length (python-tuf and go-tuf use the
-    // digest length, OpenSSL defaults to the maximum), so detect it.
-    let key = rsa::pss::VerifyingKey::<Sha256>::new_with_auto_salt_len(key);
-    let signature =
-        rsa::pss::Signature::try_from(signature).map_err(|_| CryptoError::MalformedSignature)?;
-    key.verify(message, &signature)
-        .map_err(|_| CryptoError::BadSignature)
-}
-
-/// Decodes an RSA public key from SubjectPublicKeyInfo PEM (or, failing that,
-/// PKCS#1 PEM) and enforces the minimum key size.
-fn decode_rsa_public_key(pem: &str) -> Result<RsaPublicKey, CryptoError> {
-    let pem = pem.trim();
-    let key = RsaPublicKey::from_public_key_pem(pem)
-        .or_else(|_| RsaPublicKey::from_pkcs1_pem(pem))
-        .map_err(invalid_public_key)?;
-    let bits = key.size() * 8;
-    if bits < MIN_RSA_BITS {
-        return Err(invalid_public_key(format!(
-            "RSA keys must be at least {MIN_RSA_BITS} bits, got {bits}"
-        )));
-    }
-    Ok(key)
+pub(super) fn rsa_modulus_bits(public_key: &[u8]) -> Result<usize, CryptoError> {
+    let key = RsaPublicKey::from_public_key_der(public_key).map_err(invalid_public_key)?;
+    Ok(key.size() * 8)
 }
 
 pub(super) enum SigningKey {
@@ -128,20 +93,19 @@ pub(super) enum SigningKey {
 }
 
 impl SigningKey {
-    pub(super) fn generate(scheme: &SignatureScheme) -> Result<Self, CryptoError> {
+    pub(super) fn generate(algorithm: Algorithm) -> Result<Self, CryptoError> {
         let mut rng = rng();
-        Ok(match scheme {
-            SignatureScheme::Ed25519 => Self::Ed25519(ed25519::SigningKey::generate(&mut rng)),
-            SignatureScheme::EcdsaSha2Nistp256 => {
+        Ok(match algorithm {
+            Algorithm::Ed25519 => Self::Ed25519(ed25519::SigningKey::generate(&mut rng)),
+            Algorithm::EcdsaP256Sha256 => {
                 Self::P256(p256::ecdsa::SigningKey::generate_from_rng(&mut rng))
             }
-            SignatureScheme::EcdsaSha2Nistp384 => {
+            Algorithm::EcdsaP384Sha384 => {
                 Self::P384(p384::ecdsa::SigningKey::generate_from_rng(&mut rng))
             }
-            SignatureScheme::RsassaPssSha256 => Self::RsaPssSha256(
+            Algorithm::RsaPssSha256 => Self::RsaPssSha256(
                 RsaPrivateKey::new(&mut rng, GENERATED_RSA_BITS).map_err(invalid_private_key)?,
             ),
-            other => return Err(unsupported_scheme(other)),
         })
     }
 
@@ -157,56 +121,28 @@ impl SigningKey {
             return Ok(Self::P384(key));
         }
         match RsaPrivateKey::from_pkcs8_der(der) {
-            Ok(key) => Self::rsa(key),
+            Ok(key) => Ok(Self::RsaPssSha256(key)),
             Err(_) => Err(invalid_private_key("unsupported or malformed PKCS#8 key")),
         }
     }
 
-    pub(super) fn from_pkcs8_pem(pem: &str) -> Result<Self, CryptoError> {
-        let pem = pem.trim();
-        if let Ok(key) = ed25519::SigningKey::from_pkcs8_pem(pem) {
-            return Ok(Self::Ed25519(key));
-        }
-        if let Ok(key) = p256::ecdsa::SigningKey::from_pkcs8_pem(pem) {
-            return Ok(Self::P256(key));
-        }
-        if let Ok(key) = p384::ecdsa::SigningKey::from_pkcs8_pem(pem) {
-            return Ok(Self::P384(key));
-        }
-        match RsaPrivateKey::from_pkcs8_pem(pem) {
-            Ok(key) => Self::rsa(key),
-            Err(_) => Err(invalid_private_key("unsupported or malformed PKCS#8 key")),
-        }
-    }
-
-    fn rsa(key: RsaPrivateKey) -> Result<Self, CryptoError> {
-        let bits = key.size() * 8;
-        if bits < MIN_RSA_BITS {
-            return Err(invalid_private_key(format!(
-                "RSA keys must be at least {MIN_RSA_BITS} bits, got {bits}"
-            )));
-        }
-        Ok(Self::RsaPssSha256(key))
-    }
-
-    pub(super) fn scheme(&self) -> SignatureScheme {
+    pub(super) fn algorithm(&self) -> Algorithm {
         match self {
-            Self::Ed25519(_) => SignatureScheme::Ed25519,
-            Self::P256(_) => SignatureScheme::EcdsaSha2Nistp256,
-            Self::P384(_) => SignatureScheme::EcdsaSha2Nistp384,
-            Self::RsaPssSha256(_) => SignatureScheme::RsassaPssSha256,
+            Self::Ed25519(_) => Algorithm::Ed25519,
+            Self::P256(_) => Algorithm::EcdsaP256Sha256,
+            Self::P384(_) => Algorithm::EcdsaP384Sha384,
+            Self::RsaPssSha256(_) => Algorithm::RsaPssSha256,
         }
     }
 
-    /// The public key, encoded as a TUF `keyval.public` string.
-    pub(super) fn public_key(&self) -> Result<String, CryptoError> {
-        match self {
-            Self::Ed25519(key) => Ok(hex::encode(key.verifying_key().to_bytes())),
-            Self::P256(key) => key.verifying_key().to_public_key_pem(LineEnding::LF),
-            Self::P384(key) => key.verifying_key().to_public_key_pem(LineEnding::LF),
-            Self::RsaPssSha256(key) => key.to_public_key().to_public_key_pem(LineEnding::LF),
-        }
-        .map_err(invalid_private_key)
+    pub(super) fn public_key(&self) -> Result<Vec<u8>, CryptoError> {
+        let der = match self {
+            Self::Ed25519(key) => return Ok(key.verifying_key().to_bytes().to_vec()),
+            Self::P256(key) => key.verifying_key().to_public_key_der(),
+            Self::P384(key) => key.verifying_key().to_public_key_der(),
+            Self::RsaPssSha256(key) => key.to_public_key().to_public_key_der(),
+        };
+        Ok(der.map_err(invalid_private_key)?.into_vec())
     }
 
     pub(super) fn sign(&self, message: &[u8]) -> Result<Vec<u8>, CryptoError> {
@@ -220,12 +156,9 @@ impl SigningKey {
                 let signature: p384::ecdsa::Signature = key.sign(message);
                 signature.to_der().to_vec()
             }
-            Self::RsaPssSha256(key) => {
-                // Salt length equals the digest length, as in other TUF implementations.
-                rsa::pss::SigningKey::<Sha256>::new(key.clone())
-                    .sign_with_rng(&mut rng(), message)
-                    .to_vec()
-            }
+            Self::RsaPssSha256(key) => rsa::pss::SigningKey::<Sha256>::new(key.clone())
+                .sign_with_rng(&mut rng(), message)
+                .to_vec(),
         })
     }
 }

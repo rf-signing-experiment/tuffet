@@ -7,7 +7,7 @@ edition = "2024"
 rust-version = "1.88"
 
 [workspace.dependencies]
-rftuf = { path = "." }
+rftuf = { path = ".", default-features = false }
 bytes = "1"
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 futures-executor = "0.3"
@@ -22,9 +22,10 @@ rust-version.workspace = true
 
 [features]
 default = ["rustcrypto"]
-# Cryptography backend built on the RustCrypto crates. Exactly one backend must
-# be enabled; see `src/crypto/mod.rs`.
+# Cryptography backends; see `src/crypto/mod.rs`. At least one must be enabled.
+# `aws-lc-rs` takes precedence if both are.
 rustcrypto = ["dep:sha2", "dep:ed25519-dalek", "dep:p256", "dep:p384", "dep:rsa", "dep:getrandom", "dep:rand_core"]
+aws-lc-rs = ["dep:aws-lc-rs"]
 
 [dependencies]
 bytes.workspace = true
@@ -33,11 +34,15 @@ futures-core = "0.3"
 futures-util.workspace = true
 hex = "0.4"
 log = "0.4"
+pem-rfc7468 = { version = "1", features = ["alloc"] }
 percent-encoding = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tempfile.workspace = true
 thiserror = "2"
+
+# `aws-lc-rs` backend
+aws-lc-rs = { version = "1.18", optional = true }
 
 # `rustcrypto` backend
 ed25519-dalek = { version = "3", optional = true, features = ["pkcs8", "pem", "rand_core"] }
