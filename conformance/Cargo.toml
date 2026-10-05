@@ -1,0 +1,22 @@
+[package]
+name = "rftuf-conformance"
+version = "0.0.0"
+description = "Client-under-test for the tuf-conformance test suite"
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[features]
+default = ["rustcrypto"]
+# Cryptography backend of rftuf.
+rustcrypto = ["rftuf/rustcrypto", "rftuf-http/rustcrypto"]
+aws-lc-rs = ["rftuf/aws-lc-rs", "rftuf-http/aws-lc-rs"]
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+env_logger = "0.11"
+log = "0.4"
+percent-encoding = "2"
+rftuf.workspace = true
+rftuf-http = { path = "../rftuf-http", default-features = false, features = ["rustls"] }
+tokio = { version = "1", features = ["macros", "rt"] }
