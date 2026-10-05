@@ -38,6 +38,19 @@ pub(super) fn verify(
     message: &[u8],
     signature: &[u8],
 ) -> Result<(), CryptoError> {
+    parse_public_key(algorithm, public_key)?
+        .verify_sig(message, signature)
+        .map_err(|_| CryptoError::BadSignature)
+}
+
+pub(super) fn check_public_key(algorithm: Algorithm, public_key: &[u8]) -> Result<(), CryptoError> {
+    parse_public_key(algorithm, public_key).map(drop)
+}
+
+fn parse_public_key(
+    algorithm: Algorithm,
+    public_key: &[u8],
+) -> Result<ParsedPublicKey, CryptoError> {
     let verification: &'static dyn VerificationAlgorithm = match algorithm {
         Algorithm::Ed25519 => &signature::ED25519,
         Algorithm::EcdsaP256Sha256 => &signature::ECDSA_P256_SHA256_ASN1,
@@ -45,10 +58,7 @@ pub(super) fn verify(
         // aws-lc-rs only verifies PSS signatures with a digest-length salt.
         Algorithm::RsaPssSha256 => &signature::RSA_PSS_2048_8192_SHA256,
     };
-    ParsedPublicKey::new(verification, public_key)
-        .map_err(invalid_public_key)?
-        .verify_sig(message, signature)
-        .map_err(|_| CryptoError::BadSignature)
+    ParsedPublicKey::new(verification, public_key).map_err(invalid_public_key)
 }
 
 pub(super) fn rsa_modulus_bits(public_key: &[u8]) -> Result<usize, CryptoError> {

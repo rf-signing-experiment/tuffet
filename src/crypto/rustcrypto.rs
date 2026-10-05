@@ -80,6 +80,26 @@ pub(super) fn verify(
     result.map_err(|_| CryptoError::BadSignature)
 }
 
+pub(super) fn check_public_key(algorithm: Algorithm, public_key: &[u8]) -> Result<(), CryptoError> {
+    match algorithm {
+        Algorithm::Ed25519 => {
+            let public_key = public_key.try_into().map_err(invalid_public_key)?;
+            ed25519::VerifyingKey::from_bytes(public_key)
+                .map(drop)
+                .map_err(invalid_public_key)
+        }
+        Algorithm::EcdsaP256Sha256 => p256::ecdsa::VerifyingKey::from_public_key_der(public_key)
+            .map(drop)
+            .map_err(invalid_public_key),
+        Algorithm::EcdsaP384Sha384 => p384::ecdsa::VerifyingKey::from_public_key_der(public_key)
+            .map(drop)
+            .map_err(invalid_public_key),
+        Algorithm::RsaPssSha256 => RsaPublicKey::from_public_key_der(public_key)
+            .map(drop)
+            .map_err(invalid_public_key),
+    }
+}
+
 pub(super) fn rsa_modulus_bits(public_key: &[u8]) -> Result<usize, CryptoError> {
     let key = RsaPublicKey::from_public_key_der(public_key).map_err(invalid_public_key)?;
     Ok(key.size() * 8)

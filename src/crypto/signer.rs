@@ -2,13 +2,15 @@
 
 use std::fmt;
 
-use super::{Algorithm, CryptoError, backend, check_rsa_key_size, decode_pem};
+use super::{Algorithm, CryptoError, backend, check_rsa_key_size, decode_pem, unsupported_scheme};
 use crate::metadata::{Key, SignatureScheme};
 
 /// Something that can sign metadata.
 ///
 /// [`PrivateKey`] implements this for in-memory keys. Implement it yourself
-/// to sign with keys held elsewhere, such as in an HSM or a cloud KMS.
+/// to sign with keys held elsewhere, such as in an HSM or a cloud KMS;
+/// [`public_key_from_spki`](super::public_key_from_spki) describes their
+/// public keys.
 pub trait Signer: Send + Sync {
     /// The public half of the signing key, as it appears in metadata.
     fn public_key(&self) -> &Key;
@@ -29,14 +31,7 @@ impl PrivateKey {
     ///
     /// RSA keys are 3072 bits.
     pub fn generate(scheme: &SignatureScheme) -> Result<Self, CryptoError> {
-        let algorithm =
-            Algorithm::from_scheme(scheme).ok_or_else(|| CryptoError::UnsupportedScheme {
-                keytype: scheme
-                    .key_type()
-                    .map(|kt| kt.to_string())
-                    .unwrap_or_default(),
-                scheme: scheme.to_string(),
-            })?;
+        let algorithm = Algorithm::from_scheme(scheme).ok_or_else(|| unsupported_scheme(scheme))?;
         Self::from_backend(backend::SigningKey::generate(algorithm)?)
     }
 

@@ -29,6 +29,9 @@
 //!   public keys are the raw 32 bytes; ECDSA and RSA public keys are DER
 //!   `SubjectPublicKeyInfo`; ECDSA signatures are DER. Fails with
 //!   `InvalidPublicKey` or `BadSignature`.
+//! - `check_public_key(Algorithm, public_key: &[u8])`, which fails with
+//!   `InvalidPublicKey` unless `public_key` (encoded as for `verify`) is a
+//!   valid key for the algorithm.
 //! - `rsa_modulus_bits(public_key: &[u8]) -> Result<usize, CryptoError>`.
 //! - `SigningKey`, with `generate(Algorithm)`, `from_pkcs8_der(&[u8])`,
 //!   `algorithm(&self)`, `public_key(&self)` (encoded as for `verify`) and
@@ -157,6 +160,61 @@ pub fn verify_signature(key: &Key, message: &[u8], signature: &[u8]) -> Result<(
         })?;
     let public_key = algorithm.decode_public_key(&key.keyval.public)?;
     backend::verify(algorithm, &public_key, message, signature)
+}
+
+/// Describes a public key that signs with `scheme` the way metadata lists
+/// keys, given its DER-encoded `SubjectPublicKeyInfo`.
+///
+/// Use this for keys held outside the process, such as in an HSM, a cloud
+/// KMS or a hardware token: to implement [`Signer::public_key`] for them, or
+/// to list them in metadata. The key is checked to be valid for `scheme`
+/// (RSA keys must have 2048 to 8192 bits), and is encoded the way
+/// [`PrivateKey`] encodes keys, so that a key always gets the same key ID.
+pub fn public_key_from_spki(scheme: &SignatureScheme, der: &[u8]) -> Result<Key, CryptoError> {
+    let algorithm = Algorithm::from_scheme(scheme).ok_or_else(|| unsupported_scheme(scheme))?;
+    let public_key = match algorithm {
+        // Backends take Ed25519 keys as their raw 32 bytes.
+        Algorithm::Ed25519 => der
+            .strip_prefix(ED25519_SPKI_PREFIX.as_slice())
+            .filter(|key| key.len() == 32)
+            .ok_or_else(|| {
+                CryptoError::InvalidPublicKey("not an Ed25519 SubjectPublicKeyInfo".into())
+            })?,
+        _ => der,
+    };
+    backend::check_public_key(algorithm, public_key)?;
+    if algorithm == Algorithm::RsaPssSha256 {
+        check_rsa_key_size(backend::rsa_modulus_bits(public_key)?)
+            .map_err(CryptoError::InvalidPublicKey)?;
+    }
+    Ok(Key::new(
+        algorithm.key_type(),
+        algorithm.scheme(),
+        algorithm.encode_public_key(public_key),
+    ))
+}
+
+/// Like [`public_key_from_spki`], for a PEM-encoded key
+/// (`-----BEGIN PUBLIC KEY-----`).
+pub fn public_key_from_pem(scheme: &SignatureScheme, pem: &str) -> Result<Key, CryptoError> {
+    let der = decode_pem(pem, "PUBLIC KEY").map_err(CryptoError::InvalidPublicKey)?;
+    public_key_from_spki(scheme, &der)
+}
+
+/// The DER encoding of an Ed25519 `SubjectPublicKeyInfo` (RFC 8410) up to
+/// the key itself: the algorithm identifier and the bit string's header.
+const ED25519_SPKI_PREFIX: [u8; 12] = [
+    0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x03, 0x21, 0x00,
+];
+
+fn unsupported_scheme(scheme: &SignatureScheme) -> CryptoError {
+    CryptoError::UnsupportedScheme {
+        keytype: scheme
+            .key_type()
+            .map(|keytype| keytype.to_string())
+            .unwrap_or_default(),
+        scheme: scheme.to_string(),
+    }
 }
 
 /// The signature algorithms that backends implement.

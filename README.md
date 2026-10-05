@@ -51,7 +51,8 @@ files. It is also the API for creating metadata (see
   sizes); a backend supplies the primitives (see [Features](#features)).
   Supported schemes: `ed25519`, `ecdsa-sha2-nistp256`, `ecdsa-sha2-nistp384`
   and `rsassa-pss-sha256` (RSA keys of 2048 to 8192 bits). Custom signers
-  (HSM, KMS) implement `crypto::Signer`.
+  (HSM, KMS) implement `crypto::Signer`, and `crypto::public_key_from_spki`
+  (or `_from_pem`) turns their public keys into metadata `Key`s.
 - **I/O** is defined by two traits: `transport::Transport` (async; returns
   streams so the library can enforce size limits while downloading) and
   `store::MetadataStore`. The library is runtime-agnostic.

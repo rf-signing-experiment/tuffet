@@ -245,6 +245,77 @@ fn rejects_malformed_keys_and_signatures() {
 }
 
 #[test]
+fn public_keys_from_spki_match_the_keys_of_private_keys() {
+    for scheme in [
+        SignatureScheme::Ed25519,
+        SignatureScheme::EcdsaSha2Nistp256,
+        SignatureScheme::EcdsaSha2Nistp384,
+    ] {
+        let signer = PrivateKey::generate(&scheme).unwrap();
+        let expected = signer.public_key();
+        let key = if scheme == SignatureScheme::Ed25519 {
+            let raw = hex::decode(&expected.keyval.public).unwrap();
+            public_key_from_spki(&scheme, &[&ED25519_SPKI_PREFIX[..], &raw].concat()).unwrap()
+        } else {
+            public_key_from_pem(&scheme, &expected.keyval.public).unwrap()
+        };
+        assert_eq!(&key, expected, "{scheme}");
+    }
+}
+
+#[test]
+fn public_keys_from_pem_are_reencoded() {
+    let cases: [(SignatureScheme, &[u8]); 3] = [
+        (SignatureScheme::EcdsaSha2Nistp256, vector!("p256.pub.pem")),
+        (SignatureScheme::EcdsaSha2Nistp384, vector!("p384.pub.pem")),
+        (SignatureScheme::RsassaPssSha256, vector!("rsa.pub.pem")),
+    ];
+    for (scheme, pem) in cases {
+        let expected = key(scheme.clone(), pem);
+        // Line endings and surrounding whitespace do not change the key.
+        let crlf = format!("\n  {}\r\n", text(pem).replace('\n', "\r\n"));
+        let key = public_key_from_pem(&scheme, &crlf).unwrap();
+        assert_eq!(key.keytype, expected.keytype);
+        assert_eq!(key.keyval.public, format!("{}\n", expected.keyval.public));
+        verify_signature(&key, MESSAGE, b"").unwrap_err();
+    }
+}
+
+#[test]
+fn public_keys_must_be_valid_for_their_scheme() {
+    let p256 = text(vector!("p256.pub.pem"));
+    assert!(matches!(
+        public_key_from_pem(&SignatureScheme::EcdsaSha2Nistp384, &p256),
+        Err(CryptoError::InvalidPublicKey(_))
+    ));
+    assert!(matches!(
+        public_key_from_pem(&SignatureScheme::RsassaPssSha256, &p256),
+        Err(CryptoError::InvalidPublicKey(_))
+    ));
+    assert!(matches!(
+        public_key_from_pem(&SignatureScheme::RsassaPssSha256, &text(vector!("rsa1024.pub.pem"))),
+        Err(CryptoError::InvalidPublicKey(message)) if message.contains("2048")
+    ));
+    assert!(matches!(
+        public_key_from_pem(&SignatureScheme::EcdsaSha2Nistp256, &text(vector!("p256.key.pem"))),
+        Err(CryptoError::InvalidPublicKey(message)) if message.contains("label")
+    ));
+    assert!(matches!(
+        public_key_from_spki(&SignatureScheme::EcdsaSha2Nistp256, b"not a key"),
+        Err(CryptoError::InvalidPublicKey(_))
+    ));
+    let short_ed25519 = [&ED25519_SPKI_PREFIX[..], &[0; 31]].concat();
+    assert!(matches!(
+        public_key_from_spki(&SignatureScheme::Ed25519, &short_ed25519),
+        Err(CryptoError::InvalidPublicKey(_))
+    ));
+    assert!(matches!(
+        public_key_from_pem(&SignatureScheme::Other("x".into()), &p256),
+        Err(CryptoError::UnsupportedScheme { .. })
+    ));
+}
+
+#[test]
 fn hashes_match_known_digests() {
     assert_eq!(
         hex::encode(HashAlgorithm::Sha256.digest(b"abc")),
