@@ -35,8 +35,9 @@
 //! - `rsa_modulus_bits(public_key: &[u8]) -> Result<usize, CryptoError>`.
 //! - `SigningKey`, with `generate(Algorithm)`, `from_pkcs8_der(&[u8])`,
 //!   `algorithm(&self)`, `public_key(&self)` (encoded as for `verify`) and
-//!   `sign(&self, message)`. Generated RSA keys have 3072 bits, and RSA-PSS
-//!   signatures use a digest-length salt.
+//!   `sign(&self, message)`. Generated RSA keys have 3072 bits, RSA keys
+//!   loaded from PKCS#8 use RSA-PSS with SHA-256, and RSA-PSS signatures use a
+//!   digest-length salt.
 
 use std::error::Error as StdError;
 use std::ops::RangeInclusive;
@@ -147,10 +148,11 @@ impl Hasher {
 ///
 /// The key's `keytype` must match its `scheme`. Supported combinations are
 /// those defined by the specification (`ed25519`/`ed25519`,
-/// `ecdsa`/`ecdsa-sha2-nistp256`, `rsa`/`rsassa-pss-sha256`) and
-/// `ecdsa`/`ecdsa-sha2-nistp384`. ECDSA and RSA public keys are PEM-encoded
-/// `SubjectPublicKeyInfo`, RSA keys must have 2048 to 8192 bits, and ECDSA
-/// signatures are DER-encoded.
+/// `ecdsa`/`ecdsa-sha2-nistp256`, `rsa`/`rsassa-pss-sha256`), plus
+/// `ecdsa`/`ecdsa-sha2-nistp384`, `rsa`/`rsassa-pss-sha384` and
+/// `rsa`/`rsassa-pss-sha512`, which other implementations use. ECDSA and RSA
+/// public keys are PEM-encoded `SubjectPublicKeyInfo`, RSA keys must have
+/// 2048 to 8192 bits, and ECDSA signatures are DER-encoded.
 pub fn verify_signature(key: &Key, message: &[u8], signature: &[u8]) -> Result<(), CryptoError> {
     let algorithm = Algorithm::from_scheme(&key.scheme)
         .filter(|algorithm| algorithm.key_type() == key.keytype)
@@ -183,7 +185,7 @@ pub fn public_key_from_spki(scheme: &SignatureScheme, der: &[u8]) -> Result<Key,
         _ => der,
     };
     backend::check_public_key(algorithm, public_key)?;
-    if algorithm == Algorithm::RsaPssSha256 {
+    if let Algorithm::RsaPss(_) = algorithm {
         check_rsa_key_size(backend::rsa_modulus_bits(public_key)?)
             .map_err(CryptoError::InvalidPublicKey)?;
     }
@@ -223,7 +225,16 @@ enum Algorithm {
     Ed25519,
     EcdsaP256Sha256,
     EcdsaP384Sha384,
-    RsaPssSha256,
+    RsaPss(RsaPssHash),
+}
+
+/// The hash function of an RSA-PSS algorithm, used both for the message
+/// digest and for MGF1.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RsaPssHash {
+    Sha256,
+    Sha384,
+    Sha512,
 }
 
 impl Algorithm {
@@ -232,7 +243,9 @@ impl Algorithm {
             SignatureScheme::Ed25519 => Some(Algorithm::Ed25519),
             SignatureScheme::EcdsaSha2Nistp256 => Some(Algorithm::EcdsaP256Sha256),
             SignatureScheme::EcdsaSha2Nistp384 => Some(Algorithm::EcdsaP384Sha384),
-            SignatureScheme::RsassaPssSha256 => Some(Algorithm::RsaPssSha256),
+            SignatureScheme::RsassaPssSha256 => Some(Algorithm::RsaPss(RsaPssHash::Sha256)),
+            SignatureScheme::RsassaPssSha384 => Some(Algorithm::RsaPss(RsaPssHash::Sha384)),
+            SignatureScheme::RsassaPssSha512 => Some(Algorithm::RsaPss(RsaPssHash::Sha512)),
             SignatureScheme::Other(_) => None,
         }
     }
@@ -242,7 +255,9 @@ impl Algorithm {
             Algorithm::Ed25519 => SignatureScheme::Ed25519,
             Algorithm::EcdsaP256Sha256 => SignatureScheme::EcdsaSha2Nistp256,
             Algorithm::EcdsaP384Sha384 => SignatureScheme::EcdsaSha2Nistp384,
-            Algorithm::RsaPssSha256 => SignatureScheme::RsassaPssSha256,
+            Algorithm::RsaPss(RsaPssHash::Sha256) => SignatureScheme::RsassaPssSha256,
+            Algorithm::RsaPss(RsaPssHash::Sha384) => SignatureScheme::RsassaPssSha384,
+            Algorithm::RsaPss(RsaPssHash::Sha512) => SignatureScheme::RsassaPssSha512,
         }
     }
 
@@ -250,7 +265,7 @@ impl Algorithm {
         match self {
             Algorithm::Ed25519 => KeyType::Ed25519,
             Algorithm::EcdsaP256Sha256 | Algorithm::EcdsaP384Sha384 => KeyType::Ecdsa,
-            Algorithm::RsaPssSha256 => KeyType::Rsa,
+            Algorithm::RsaPss(_) => KeyType::Rsa,
         }
     }
 
@@ -267,7 +282,7 @@ impl Algorithm {
                 });
         }
         let key = decode_pem(encoded, "PUBLIC KEY").map_err(CryptoError::InvalidPublicKey)?;
-        if self == Algorithm::RsaPssSha256 {
+        if let Algorithm::RsaPss(_) = self {
             check_rsa_key_size(backend::rsa_modulus_bits(&key)?)
                 .map_err(CryptoError::InvalidPublicKey)?;
         }

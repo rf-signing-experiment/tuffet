@@ -9,7 +9,7 @@ use aws_lc_rs::signature::{
     RsaKeyPair, VerificationAlgorithm,
 };
 
-use super::{Algorithm, CryptoError, HashAlgorithm};
+use super::{Algorithm, CryptoError, HashAlgorithm, RsaPssHash};
 
 const GENERATED_RSA_SIZE: KeySize = KeySize::Rsa3072;
 
@@ -56,7 +56,9 @@ fn parse_public_key(
         Algorithm::EcdsaP256Sha256 => &signature::ECDSA_P256_SHA256_ASN1,
         Algorithm::EcdsaP384Sha384 => &signature::ECDSA_P384_SHA384_ASN1,
         // aws-lc-rs only verifies PSS signatures with a digest-length salt.
-        Algorithm::RsaPssSha256 => &signature::RSA_PSS_2048_8192_SHA256,
+        Algorithm::RsaPss(RsaPssHash::Sha256) => &signature::RSA_PSS_2048_8192_SHA256,
+        Algorithm::RsaPss(RsaPssHash::Sha384) => &signature::RSA_PSS_2048_8192_SHA384,
+        Algorithm::RsaPss(RsaPssHash::Sha512) => &signature::RSA_PSS_2048_8192_SHA512,
     };
     ParsedPublicKey::new(verification, public_key).map_err(invalid_public_key)
 }
@@ -69,7 +71,7 @@ pub(super) fn rsa_modulus_bits(public_key: &[u8]) -> Result<usize, CryptoError> 
 pub(super) enum SigningKey {
     Ed25519(Ed25519KeyPair),
     Ecdsa(Algorithm, EcdsaKeyPair),
-    RsaPssSha256(RsaKeyPair),
+    RsaPss(RsaPssHash, RsaKeyPair),
 }
 
 impl SigningKey {
@@ -80,8 +82,8 @@ impl SigningKey {
                 EcdsaKeyPair::generate(ecdsa_signing(algorithm))
                     .map(|key| Self::Ecdsa(algorithm, key))
             }
-            Algorithm::RsaPssSha256 => {
-                RsaKeyPair::generate(GENERATED_RSA_SIZE).map(Self::RsaPssSha256)
+            Algorithm::RsaPss(hash) => {
+                RsaKeyPair::generate(GENERATED_RSA_SIZE).map(|key| Self::RsaPss(hash, key))
             }
         };
         key.map_err(invalid_private_key)
@@ -100,7 +102,7 @@ impl SigningKey {
             }
         }
         match RsaKeyPair::from_pkcs8(der) {
-            Ok(key) => Ok(Self::RsaPssSha256(key)),
+            Ok(key) => Ok(Self::RsaPss(RsaPssHash::Sha256, key)),
             Err(_) => Err(invalid_private_key("unsupported or malformed PKCS#8 key")),
         }
     }
@@ -109,7 +111,7 @@ impl SigningKey {
         match self {
             Self::Ed25519(_) => Algorithm::Ed25519,
             Self::Ecdsa(algorithm, _) => *algorithm,
-            Self::RsaPssSha256(_) => Algorithm::RsaPssSha256,
+            Self::RsaPss(hash, _) => Algorithm::RsaPss(*hash),
         }
     }
 
@@ -117,7 +119,7 @@ impl SigningKey {
         let der = match self {
             Self::Ed25519(key) => return Ok(key.public_key().as_ref().to_vec()),
             Self::Ecdsa(_, key) => key.public_key().as_der(),
-            Self::RsaPssSha256(key) => key.public_key().as_der(),
+            Self::RsaPss(_, key) => key.public_key().as_der(),
         };
         Ok(der.map_err(invalid_private_key)?.as_ref().to_vec())
     }
@@ -130,9 +132,14 @@ impl SigningKey {
                 .sign(&rng, message)
                 .map(|signature| signature.as_ref().to_vec())
                 .map_err(signing_error),
-            Self::RsaPssSha256(key) => {
+            Self::RsaPss(hash, key) => {
+                let padding = match hash {
+                    RsaPssHash::Sha256 => &signature::RSA_PSS_SHA256,
+                    RsaPssHash::Sha384 => &signature::RSA_PSS_SHA384,
+                    RsaPssHash::Sha512 => &signature::RSA_PSS_SHA512,
+                };
                 let mut signature = vec![0; key.public_modulus_len()];
-                key.sign(&signature::RSA_PSS_SHA256, &rng, message, &mut signature)
+                key.sign(padding, &rng, message, &mut signature)
                     .map_err(signing_error)?;
                 Ok(signature)
             }
@@ -145,7 +152,7 @@ fn ecdsa_signing(algorithm: Algorithm) -> &'static EcdsaSigningAlgorithm {
     match algorithm {
         Algorithm::EcdsaP256Sha256 => &signature::ECDSA_P256_SHA256_ASN1_SIGNING,
         Algorithm::EcdsaP384Sha384 => &signature::ECDSA_P384_SHA384_ASN1_SIGNING,
-        Algorithm::Ed25519 | Algorithm::RsaPssSha256 => unreachable!("{algorithm:?} is not ECDSA"),
+        Algorithm::Ed25519 | Algorithm::RsaPss(_) => unreachable!("{algorithm:?} is not ECDSA"),
     }
 }
 

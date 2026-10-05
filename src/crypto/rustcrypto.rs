@@ -8,9 +8,9 @@ use rsa::pkcs8::{DecodePrivateKey, DecodePublicKey, EncodePublicKey};
 use rsa::signature::{RandomizedSigner, SignatureEncoding, Signer as _, Verifier as _};
 use rsa::traits::PublicKeyParts;
 use rsa::{RsaPrivateKey, RsaPublicKey};
-use sha2::{Digest, Sha256, Sha512};
+use sha2::{Digest, Sha256, Sha384, Sha512};
 
-use super::{Algorithm, CryptoError, HashAlgorithm};
+use super::{Algorithm, CryptoError, HashAlgorithm, RsaPssHash};
 
 const GENERATED_RSA_BITS: usize = 3072;
 
@@ -67,14 +67,26 @@ pub(super) fn verify(
             let key = VerifyingKey::from_public_key_der(public_key).map_err(invalid_public_key)?;
             Signature::from_der(signature).and_then(|signature| key.verify(message, &signature))
         }
-        Algorithm::RsaPssSha256 => {
+        Algorithm::RsaPss(hash) => {
+            use rsa::pss::{Signature, VerifyingKey};
             let key = RsaPublicKey::from_public_key_der(public_key).map_err(invalid_public_key)?;
+            let Ok(signature) = Signature::try_from(signature) else {
+                return Err(CryptoError::BadSignature);
+            };
             // Signers disagree on the PSS salt length (python-tuf and go-tuf
             // use the digest length, OpenSSL defaults to the maximum), so
             // detect it.
-            let key = rsa::pss::VerifyingKey::<Sha256>::new_with_auto_salt_len(key);
-            rsa::pss::Signature::try_from(signature)
-                .and_then(|signature| key.verify(message, &signature))
+            match hash {
+                RsaPssHash::Sha256 => {
+                    VerifyingKey::<Sha256>::new_with_auto_salt_len(key).verify(message, &signature)
+                }
+                RsaPssHash::Sha384 => {
+                    VerifyingKey::<Sha384>::new_with_auto_salt_len(key).verify(message, &signature)
+                }
+                RsaPssHash::Sha512 => {
+                    VerifyingKey::<Sha512>::new_with_auto_salt_len(key).verify(message, &signature)
+                }
+            }
         }
     };
     result.map_err(|_| CryptoError::BadSignature)
@@ -94,7 +106,7 @@ pub(super) fn check_public_key(algorithm: Algorithm, public_key: &[u8]) -> Resul
         Algorithm::EcdsaP384Sha384 => p384::ecdsa::VerifyingKey::from_public_key_der(public_key)
             .map(drop)
             .map_err(invalid_public_key),
-        Algorithm::RsaPssSha256 => RsaPublicKey::from_public_key_der(public_key)
+        Algorithm::RsaPss(_) => RsaPublicKey::from_public_key_der(public_key)
             .map(drop)
             .map_err(invalid_public_key),
     }
@@ -109,7 +121,7 @@ pub(super) enum SigningKey {
     Ed25519(ed25519::SigningKey),
     P256(p256::ecdsa::SigningKey),
     P384(p384::ecdsa::SigningKey),
-    RsaPssSha256(RsaPrivateKey),
+    RsaPss(RsaPssHash, RsaPrivateKey),
 }
 
 impl SigningKey {
@@ -123,7 +135,8 @@ impl SigningKey {
             Algorithm::EcdsaP384Sha384 => {
                 Self::P384(p384::ecdsa::SigningKey::generate_from_rng(&mut rng))
             }
-            Algorithm::RsaPssSha256 => Self::RsaPssSha256(
+            Algorithm::RsaPss(hash) => Self::RsaPss(
+                hash,
                 RsaPrivateKey::new(&mut rng, GENERATED_RSA_BITS).map_err(invalid_private_key)?,
             ),
         })
@@ -141,7 +154,7 @@ impl SigningKey {
             return Ok(Self::P384(key));
         }
         match RsaPrivateKey::from_pkcs8_der(der) {
-            Ok(key) => Ok(Self::RsaPssSha256(key)),
+            Ok(key) => Ok(Self::RsaPss(RsaPssHash::Sha256, key)),
             Err(_) => Err(invalid_private_key("unsupported or malformed PKCS#8 key")),
         }
     }
@@ -151,7 +164,7 @@ impl SigningKey {
             Self::Ed25519(_) => Algorithm::Ed25519,
             Self::P256(_) => Algorithm::EcdsaP256Sha256,
             Self::P384(_) => Algorithm::EcdsaP384Sha384,
-            Self::RsaPssSha256(_) => Algorithm::RsaPssSha256,
+            Self::RsaPss(hash, _) => Algorithm::RsaPss(*hash),
         }
     }
 
@@ -160,7 +173,7 @@ impl SigningKey {
             Self::Ed25519(key) => return Ok(key.verifying_key().to_bytes().to_vec()),
             Self::P256(key) => key.verifying_key().to_public_key_der(),
             Self::P384(key) => key.verifying_key().to_public_key_der(),
-            Self::RsaPssSha256(key) => key.to_public_key().to_public_key_der(),
+            Self::RsaPss(_, key) => key.to_public_key().to_public_key_der(),
         };
         Ok(der.map_err(invalid_private_key)?.into_vec())
     }
@@ -176,9 +189,21 @@ impl SigningKey {
                 let signature: p384::ecdsa::Signature = key.sign(message);
                 signature.to_der().to_vec()
             }
-            Self::RsaPssSha256(key) => rsa::pss::SigningKey::<Sha256>::new(key.clone())
-                .sign_with_rng(&mut rng(), message)
-                .to_vec(),
+            Self::RsaPss(hash, key) => {
+                use rsa::pss::SigningKey;
+                let (key, mut rng) = (key.clone(), rng());
+                match hash {
+                    RsaPssHash::Sha256 => SigningKey::<Sha256>::new(key)
+                        .sign_with_rng(&mut rng, message)
+                        .to_vec(),
+                    RsaPssHash::Sha384 => SigningKey::<Sha384>::new(key)
+                        .sign_with_rng(&mut rng, message)
+                        .to_vec(),
+                    RsaPssHash::Sha512 => SigningKey::<Sha512>::new(key)
+                        .sign_with_rng(&mut rng, message)
+                        .to_vec(),
+                }
+            }
         })
     }
 }

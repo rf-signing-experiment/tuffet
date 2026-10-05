@@ -57,7 +57,17 @@ fn rsa_keys_sign_and_verify() {
 
 #[test]
 fn verifies_signatures_made_by_openssl() {
-    let cases: [(SignatureScheme, &[u8], &[u8]); 4] = [
+    let cases: [(SignatureScheme, &[u8], &[u8]); 6] = [
+        (
+            SignatureScheme::RsassaPssSha384,
+            vector!("rsa.pub.pem"),
+            vector!("rsa-pss-sha384.sig"),
+        ),
+        (
+            SignatureScheme::RsassaPssSha512,
+            vector!("rsa.pub.pem"),
+            vector!("rsa-pss-sha512.sig"),
+        ),
         (
             SignatureScheme::RsassaPssSha256,
             vector!("rsa.pub.pem"),
@@ -83,6 +93,49 @@ fn verifies_signatures_made_by_openssl() {
         let key = key(scheme, public);
         verify_signature(&key, MESSAGE, signature).unwrap();
         assert!(verify_signature(&key, b"something else", signature).is_err());
+    }
+}
+
+#[test]
+fn rsa_pss_signatures_only_verify_with_their_hash() {
+    let signatures: [(SignatureScheme, &[u8]); 3] = [
+        (
+            SignatureScheme::RsassaPssSha256,
+            vector!("rsa-pss-saltdigest.sig"),
+        ),
+        (
+            SignatureScheme::RsassaPssSha384,
+            vector!("rsa-pss-sha384.sig"),
+        ),
+        (
+            SignatureScheme::RsassaPssSha512,
+            vector!("rsa-pss-sha512.sig"),
+        ),
+    ];
+    for (signed_with, signature) in &signatures {
+        for (scheme, _) in &signatures {
+            let key = key(scheme.clone(), vector!("rsa.pub.pem"));
+            let result = verify_signature(&key, MESSAGE, signature);
+            assert_eq!(
+                result.is_ok(),
+                scheme == signed_with,
+                "{signed_with} checked as {scheme}"
+            );
+        }
+    }
+}
+
+#[test]
+fn generated_rsa_keys_sign_and_verify_with_each_hash() {
+    for scheme in [
+        SignatureScheme::RsassaPssSha256,
+        SignatureScheme::RsassaPssSha384,
+        SignatureScheme::RsassaPssSha512,
+    ] {
+        let signer = PrivateKey::generate(&scheme).unwrap();
+        assert_eq!(signer.public_key().scheme, scheme);
+        let signature = signer.sign(b"message").unwrap();
+        verify_signature(signer.public_key(), b"message", &signature).unwrap();
     }
 }
 

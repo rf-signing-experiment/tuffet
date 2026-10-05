@@ -1,9 +1,10 @@
 # Test data
 
 - `crypto/`: keys and signatures generated with OpenSSL 3, used to check that
-  signatures from another implementation verify (RSA-PSS with maximum and
-  digest-length salts, DER-encoded ECDSA, Ed25519) and that PKCS#8 keys load.
-  The private keys are test keys only.
+  signatures from another implementation verify (RSA-PSS with SHA-256 and
+  maximum and digest-length salts, RSA-PSS with SHA-384 and SHA-512,
+  DER-encoded ECDSA, Ed25519) and that PKCS#8 keys load. The private keys are
+  test keys only.
 - `python-tuf/`: the test repository of the TUF reference implementation,
   copied unmodified from
   <https://github.com/theupdateframework/python-tuf/tree/develop/tests/repository_data/repository>.

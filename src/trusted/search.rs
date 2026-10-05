@@ -50,6 +50,12 @@ impl TargetInfo {
 
 /// The next role a [`TargetSearch`] needs: the metadata of `role`, verified
 /// with the keys `delegator` delegates to it.
+///
+/// That holds even if the role's metadata was already verified through
+/// another delegation: [`TrustedMetadata::delegated_targets`] checks it again
+/// for this one.
+///
+/// [`TrustedMetadata::delegated_targets`]: super::TrustedMetadata::delegated_targets
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SearchStep {
     pub role: String,
@@ -116,9 +122,10 @@ impl TargetSearch {
         Some(step)
     }
 
-    /// Visits the role of `step`, given its verified targets metadata.
-    /// Returns the target if the role lists it; otherwise queues the role's
-    /// delegations that are trusted for the path.
+    /// Visits the role of `step`, given its targets metadata as verified for
+    /// the step's delegation (see [`SearchStep`]). Returns the target if the
+    /// role lists it; otherwise queues the role's delegations that are trusted
+    /// for the path.
     pub fn visit(&mut self, step: &SearchStep, metadata: &Targets) -> Option<TargetInfo> {
         if let Some(file) = metadata.targets.get(&self.path) {
             return Some(TargetInfo {

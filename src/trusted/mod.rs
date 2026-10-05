@@ -104,8 +104,32 @@ impl<P: Pouf> TrustedMetadata<P> {
     }
 
     /// The metadata of the top-level targets role or of a delegated role.
+    ///
+    /// A role can be delegated to by several roles, with different keys. The
+    /// metadata returned here was verified for the delegation it was loaded
+    /// through, which may not be the one at hand: to use it through a
+    /// particular delegation, get it with
+    /// [`delegated_targets`](Self::delegated_targets) instead.
     pub fn targets_role(&self, role: &str) -> Option<&Metadata<Targets, P>> {
         self.targets.get(role)
+    }
+
+    /// The trusted targets metadata of `role`, if it is loaded, checked
+    /// against the keys that `delegator` delegates `role` to.
+    ///
+    /// Fails if the metadata was loaded through a different delegation whose
+    /// keys signed it, but `delegator`'s keys did not: otherwise one
+    /// delegation could lend its trust to another.
+    pub fn delegated_targets(
+        &self,
+        role: &str,
+        delegator: &str,
+    ) -> Result<Option<&Metadata<Targets, P>>> {
+        let Some(metadata) = self.targets.get(role) else {
+            return Ok(None);
+        };
+        self.verify_delegation(role, delegator, metadata)?;
+        Ok(Some(metadata))
     }
 
     /// What the trusted timestamp metadata says about the snapshot metadata:
@@ -325,22 +349,32 @@ impl<P: Pouf> TrustedMetadata<P> {
         let expected_version = meta.version;
 
         let new_targets = Metadata::<Targets, P>::from_bytes(data)?;
-        if delegator == RoleType::Root.as_str() {
-            if role != RoleType::Targets.as_str() {
-                return Err(Error::UnknownDelegation(role.to_owned()));
-            }
-            self.root.signed().verify_role(&new_targets)?;
-        } else {
-            let parent = self.targets.get(delegator).ok_or(Error::InvalidState(
-                "the delegating targets metadata is not loaded",
-            ))?;
-            parent.signed().verify_delegate(role, &new_targets)?;
-        }
+        self.verify_delegation(role, delegator, &new_targets)?;
         check_version(role, expected_version, new_targets.signed().version)?;
         check_expiry(role, new_targets.signed(), self.reference_time)?;
 
         self.targets.insert(role.to_owned(), new_targets);
         Ok(&self.targets[role])
+    }
+
+    /// Checks that `metadata` for `role` is signed by the keys `delegator`
+    /// (the root, for the top-level targets role) delegates to it.
+    fn verify_delegation(
+        &self,
+        role: &str,
+        delegator: &str,
+        metadata: &Metadata<Targets, P>,
+    ) -> Result<()> {
+        if delegator == RoleType::Root.as_str() {
+            if role != RoleType::Targets.as_str() {
+                return Err(Error::UnknownDelegation(role.to_owned()));
+            }
+            return self.root.signed().verify_role(metadata);
+        }
+        let parent = self.targets.get(delegator).ok_or(Error::InvalidState(
+            "the delegating targets metadata is not loaded",
+        ))?;
+        parent.signed().verify_delegate(role, metadata)
     }
 
     /// The timestamp metadata, provided it and the root are unexpired.

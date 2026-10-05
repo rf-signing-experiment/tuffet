@@ -370,6 +370,39 @@ fn terminating_delegations_hide_lower_priorities() {
 }
 
 #[test]
+fn a_role_is_verified_for_each_delegation_it_is_reached_through() {
+    // "a" and "b" both delegate to "shared", with different keys; "shared" is
+    // signed only with the key "a" trusts.
+    let mut repo = TestRepo::new();
+    repo.add_delegation("targets", "a", &["a/*"], false);
+    repo.add_delegation("targets", "b", &["b/*"], false);
+    repo.add_delegation("a", "shared", &["a/*"], false);
+    let key_trusted_by_a = repo.signers["shared"].clone();
+    repo.add_delegation("b", "shared", &["b/*"], false);
+    repo.signers.insert("shared".to_owned(), key_trusted_by_a);
+    repo.add_target("shared", "a/file", b"trusted");
+    repo.add_target("shared", "b/file", b"malicious");
+    repo.commit();
+    let store = Arc::new(MemoryStore::new());
+
+    let mut client = updater(&repo, &store);
+    assert_eq!(find(&mut client, "a/file").as_deref(), Some("shared"));
+    let through_b = block_on(client.get_target_info("b/file"));
+    assert!(
+        matches!(&through_b, Err(Error::SignatureThreshold { role, .. }) if role == "shared"),
+        "{through_b:?}"
+    );
+
+    // A new session reaching "shared" through "b" first, from the cache.
+    let mut restarted = updater(&repo, &store);
+    refresh(&mut restarted).unwrap();
+    assert!(matches!(
+        block_on(restarted.get_target_info("b/file")),
+        Err(Error::SignatureThreshold { .. })
+    ));
+}
+
+#[test]
 fn percent_encodes_role_names_in_file_names() {
     let mut repo = TestRepo::new();
     repo.add_delegation("targets", "team/web", &["*"], false);

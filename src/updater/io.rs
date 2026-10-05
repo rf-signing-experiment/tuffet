@@ -108,15 +108,18 @@ impl<T: Transport, S: MetadataStore> Io<T, S> {
         self.persist(&name, &data)
     }
 
-    /// 5.6: returns the trusted targets metadata of `role`, loading it from
-    /// the cache or the remote repository if it is not trusted yet.
+    /// 5.6: returns the trusted targets metadata of `role`, as delegated by
+    /// `delegator`, loading it from the cache or the remote repository if it
+    /// is not trusted yet.
     pub(super) async fn load_targets<'t, P: Pouf>(
         &self,
         trusted: &'t mut TrustedMetadata<P>,
         role: &str,
         delegator: &str,
     ) -> Result<&'t Metadata<Targets, P>> {
-        if trusted.targets_role(role).is_none() {
+        // Metadata loaded earlier, possibly through another delegation, must
+        // also satisfy this one.
+        if trusted.delegated_targets(role, delegator)?.is_none() {
             self.update_targets(trusted, role, delegator).await?;
         }
         Ok(trusted

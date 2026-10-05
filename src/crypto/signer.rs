@@ -35,7 +35,8 @@ impl PrivateKey {
         Self::from_backend(backend::SigningKey::generate(algorithm)?)
     }
 
-    /// Loads a DER-encoded PKCS#8 private key (Ed25519, ECDSA P-256/P-384 or RSA).
+    /// Loads a DER-encoded PKCS#8 private key (Ed25519, ECDSA P-256/P-384 or
+    /// RSA). RSA keys sign with `rsassa-pss-sha256`.
     pub fn from_pkcs8_der(der: &[u8]) -> Result<Self, CryptoError> {
         Self::from_backend(backend::SigningKey::from_pkcs8_der(der)?)
     }
@@ -49,7 +50,7 @@ impl PrivateKey {
     fn from_backend(inner: backend::SigningKey) -> Result<Self, CryptoError> {
         let algorithm = inner.algorithm();
         let public_key = inner.public_key()?;
-        if algorithm == Algorithm::RsaPssSha256 {
+        if let Algorithm::RsaPss(_) = algorithm {
             check_rsa_key_size(backend::rsa_modulus_bits(&public_key)?)
                 .map_err(CryptoError::InvalidPrivateKey)?;
         }

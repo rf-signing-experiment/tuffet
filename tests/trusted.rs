@@ -449,3 +449,50 @@ fn delegated_targets_must_be_signed_by_delegated_keys() {
         .unwrap();
     assert!(trusted.targets_role("b").is_some());
 }
+
+/// Builds a repository where "a" and "b" both delegate to "shared", with
+/// different keys, and "shared" is signed only with the key "a" trusts.
+fn diamond_delegation() -> TestRepo {
+    let mut repo = TestRepo::new();
+    repo.add_delegation("targets", "a", &["a/*"], false);
+    repo.add_delegation("targets", "b", &["b/*"], false);
+    repo.add_delegation("a", "shared", &["a/*"], false);
+    let key_trusted_by_a = repo.signers["shared"].clone();
+    repo.add_delegation("b", "shared", &["b/*"], false);
+    repo.signers.insert("shared".to_owned(), key_trusted_by_a);
+    repo.add_target("shared", "a/file", b"trusted");
+    repo.add_target("shared", "b/file", b"malicious");
+    repo.commit();
+    repo
+}
+
+#[test]
+fn a_role_must_satisfy_each_delegation_it_is_used_through() {
+    let repo = diamond_delegation();
+    let mut trusted = load_all(&repo);
+    trusted
+        .update_delegated_targets(&repo.file("a.json"), "a", "targets")
+        .unwrap();
+    trusted
+        .update_delegated_targets(&repo.file("b.json"), "b", "targets")
+        .unwrap();
+    trusted
+        .update_delegated_targets(&repo.file("shared.json"), "shared", "a")
+        .unwrap();
+
+    assert!(trusted.delegated_targets("shared", "a").unwrap().is_some());
+    assert!(matches!(
+        trusted.delegated_targets("shared", "b"),
+        Err(Error::SignatureThreshold { role, .. }) if role == "shared"
+    ));
+    assert!(matches!(
+        trusted.update_delegated_targets(&repo.file("shared.json"), "shared", "b"),
+        Err(Error::SignatureThreshold { .. })
+    ));
+    assert!(
+        trusted
+            .delegated_targets("unloaded", "a")
+            .unwrap()
+            .is_none()
+    );
+}

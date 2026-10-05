@@ -8,6 +8,9 @@ implementing the client workflow of the specification in [`tuf-spec.md`](tuf-spe
 | --- | --- |
 | [`rftuf`](src/) | The library. No HTTP client; filesystem and in-memory I/O are built in. |
 | [`rftuf-http`](rftuf-http/) | An HTTP(S) `Transport` built on reqwest. |
+| [`rftuf-conformance`](conformance/) | The client-under-test for the [tuf-conformance] test suite (not published). |
+
+The [`fuzz`](fuzz/) directory holds fuzz targets, in a crate of its own.
 
 ## Layers
 
@@ -50,12 +53,17 @@ files. It is also the API for creating metadata (see
   backend-neutral part holds the TUF rules (schemes, key encodings, RSA key
   sizes); a backend supplies the primitives (see [Features](#features)).
   Supported schemes: `ed25519`, `ecdsa-sha2-nistp256`, `ecdsa-sha2-nistp384`
-  and `rsassa-pss-sha256` (RSA keys of 2048 to 8192 bits). Custom signers
+  and `rsassa-pss-sha256`/`-sha384`/`-sha512` (RSA keys of 2048 to 8192
+  bits). Custom signers
   (HSM, KMS) implement `crypto::Signer`, and `crypto::public_key_from_spki`
   (or `_from_pem`) turns their public keys into metadata `Key`s.
 - **I/O** is defined by two traits: `transport::Transport` (async; returns
   streams so the library can enforce size limits while downloading) and
   `store::MetadataStore`. The library is runtime-agnostic.
+- **Path patterns** in delegations follow glob(7), the shell convention the
+  specification refers to. Each `/`-separated segment is matched with the
+  `glob` crate (as python-tuf and go-tuf match segment by segment), so that
+  wildcards never match a `/`; see [`pattern.rs`](src/metadata/pattern.rs).
 - **Key IDs** are treated as opaque labels, as python-tuf and go-tuf do, rather
   than being recomputed as the specification requires; see the crate docs.
 - **Not supported:** multi-repository consensus (TAP 4) and the mirrors role.
@@ -99,6 +107,33 @@ Besides unit tests, the suite includes:
   repository (verified, and updated from on disk and over HTTP) and
   OpenSSL-made keys and signatures.
 
+### Conformance
+
+The [tuf-conformance] suite tests the client against the specification and
+other implementations' behavior. rftuf passes all its tests except those for
+ML-DSA keys, which are not part of the specification
+([`conformance/rftuf-conformance.xfails`](conformance/rftuf-conformance.xfails)).
+To run it locally (needs git, Python 3.10+ and `faketime`):
+
+```sh
+conformance/run.sh                          # extra arguments go to pytest, e.g. -k NAME -rA
+BACKEND=aws-lc-rs conformance/run.sh
+```
+
+### Fuzzing
+
+See [`fuzz/README.md`](fuzz/README.md). In short, with a nightly toolchain and
+cargo-fuzz installed, `fuzz/run.sh` runs every target for a minute.
+
+### CI
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) checks formatting,
+clippy and docs; runs the tests on Linux (both backends), macOS and Windows;
+checks the minimum Rust version; runs tuf-conformance for both backends; and
+runs every fuzz target for a minute (ten in a weekly scheduled run).
+
+### Live repositories
+
 To try a live repository, run the example. For instance, against Sigstore,
 with a root obtained out of band:
 
@@ -107,3 +142,5 @@ cargo run -p rftuf-http --example download -- \
     https://tuf-repo-cdn.sigstore.dev/ https://tuf-repo-cdn.sigstore.dev/targets/ \
     root.json ./tuf-cache trusted_root.json trusted_root.json
 ```
+
+[tuf-conformance]: https://github.com/theupdateframework/tuf-conformance

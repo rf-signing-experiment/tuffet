@@ -141,6 +141,12 @@ string_enum! {
         EcdsaSha2Nistp384 => "ecdsa-sha2-nistp384",
         /// RSA-PSS with SHA-256 and MGF1-SHA-256.
         RsassaPssSha256 => "rsassa-pss-sha256",
+        /// RSA-PSS with SHA-384 and MGF1-SHA-384. Not defined by the
+        /// specification, but used by other implementations.
+        RsassaPssSha384 => "rsassa-pss-sha384",
+        /// RSA-PSS with SHA-512 and MGF1-SHA-512. Not defined by the
+        /// specification, but used by other implementations.
+        RsassaPssSha512 => "rsassa-pss-sha512",
     }
 }
 
@@ -152,7 +158,9 @@ impl SignatureScheme {
             SignatureScheme::EcdsaSha2Nistp256 | SignatureScheme::EcdsaSha2Nistp384 => {
                 Some(KeyType::Ecdsa)
             }
-            SignatureScheme::RsassaPssSha256 => Some(KeyType::Rsa),
+            SignatureScheme::RsassaPssSha256
+            | SignatureScheme::RsassaPssSha384
+            | SignatureScheme::RsassaPssSha512 => Some(KeyType::Rsa),
             SignatureScheme::Other(_) => None,
         }
     }
