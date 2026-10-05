@@ -3,9 +3,9 @@
 //! This module is the only part of the crate that touches cryptography; all
 //! other modules use the backend-neutral API defined here. This module also
 //! owns the TUF-specific rules: which schemes exist, how `keyval.public`
-//! strings encode keys (hex for Ed25519, PEM for ECDSA and RSA), and the
-//! allowed RSA key sizes. The primitives themselves come from a backend
-//! module selected with a cargo feature:
+//! strings encode keys (hex for Ed25519, PEM for the others), the allowed RSA
+//! key sizes, and the message ML-DSA signs ([TAP 21]). The primitives
+//! themselves come from a backend module selected with a cargo feature:
 //!
 //! - `rustcrypto` (default): the RustCrypto crates.
 //! - `aws-lc-rs`: [AWS-LC](https://github.com/aws/aws-lc) through `aws-lc-rs`.
@@ -17,6 +17,10 @@
 //! verifies RSA-PSS signatures whose salt is as long as the digest, the
 //! length that python-tuf, go-tuf and this crate sign with. (`aws-lc-rs`
 //! does not support other lengths; the `rustcrypto` backend accepts any.)
+//! Also, the `rustcrypto` backend only loads ML-DSA private keys that include
+//! the seed; `aws-lc-rs` also loads the expanded form alone.
+//!
+//! [TAP 21]: https://github.com/theupdateframework/taps/blob/master/tap21.md
 //!
 //! # Adding a backend
 //!
@@ -26,9 +30,10 @@
 //! - `Hasher`, with `new(HashAlgorithm)`, `update(&mut self, &[u8])` and
 //!   `finalize(self) -> Vec<u8>`.
 //! - `verify(Algorithm, public_key: &[u8], message, signature)`. Ed25519
-//!   public keys are the raw 32 bytes; ECDSA and RSA public keys are DER
-//!   `SubjectPublicKeyInfo`; ECDSA signatures are DER. Fails with
-//!   `InvalidPublicKey` or `BadSignature`.
+//!   public keys are the raw 32 bytes; other public keys are DER
+//!   `SubjectPublicKeyInfo`; ECDSA signatures are DER. ML-DSA is the pure
+//!   variant with an empty context (the TAP 21 message is built here). Fails
+//!   with `InvalidPublicKey` or `BadSignature`.
 //! - `check_public_key(Algorithm, public_key: &[u8])`, which fails with
 //!   `InvalidPublicKey` unless `public_key` (encoded as for `verify`) is a
 //!   valid key for the algorithm.
@@ -39,6 +44,7 @@
 //!   loaded from PKCS#8 use RSA-PSS with SHA-256, and RSA-PSS signatures use a
 //!   digest-length salt.
 
+use std::borrow::Cow;
 use std::error::Error as StdError;
 use std::ops::RangeInclusive;
 
@@ -150,9 +156,13 @@ impl Hasher {
 /// those defined by the specification (`ed25519`/`ed25519`,
 /// `ecdsa`/`ecdsa-sha2-nistp256`, `rsa`/`rsassa-pss-sha256`), plus
 /// `ecdsa`/`ecdsa-sha2-nistp384`, `rsa`/`rsassa-pss-sha384` and
-/// `rsa`/`rsassa-pss-sha512`, which other implementations use. ECDSA and RSA
-/// public keys are PEM-encoded `SubjectPublicKeyInfo`, RSA keys must have
-/// 2048 to 8192 bits, and ECDSA signatures are DER-encoded.
+/// `rsa`/`rsassa-pss-sha512`, which other implementations use, and
+/// `ml-dsa`/`ml-dsa-44/1`, `ml-dsa-65/1` and `ml-dsa-87/1` as defined by
+/// [TAP 21]. Public keys other than Ed25519 ones are PEM-encoded
+/// `SubjectPublicKeyInfo`, RSA keys must have 2048 to 8192 bits, and ECDSA
+/// signatures are DER-encoded.
+///
+/// [TAP 21]: https://github.com/theupdateframework/taps/blob/master/tap21.md
 pub fn verify_signature(key: &Key, message: &[u8], signature: &[u8]) -> Result<(), CryptoError> {
     let algorithm = Algorithm::from_scheme(&key.scheme)
         .filter(|algorithm| algorithm.key_type() == key.keytype)
@@ -161,7 +171,27 @@ pub fn verify_signature(key: &Key, message: &[u8], signature: &[u8]) -> Result<(
             scheme: key.scheme.as_str().to_owned(),
         })?;
     let public_key = algorithm.decode_public_key(&key.keyval.public)?;
-    backend::verify(algorithm, &public_key, message, signature)
+    backend::verify(
+        algorithm,
+        &public_key,
+        &algorithm.message(message),
+        signature,
+    )
+}
+
+/// The message that an ML-DSA key signs for a metadata payload (its
+/// canonical form), as defined by version 1 of [TAP 21]:
+/// `"tuf" || 0x01 || SHA-512(payload)`.
+///
+/// [`PrivateKey`] and signature verification apply this themselves; a custom
+/// [`Signer`] for an ML-DSA key signs this message with pure ML-DSA and an
+/// empty context.
+///
+/// [TAP 21]: https://github.com/theupdateframework/taps/blob/master/tap21.md
+pub fn ml_dsa_message(payload: &[u8]) -> Vec<u8> {
+    let mut message = b"tuf\x01".to_vec();
+    message.extend(HashAlgorithm::Sha512.digest(payload));
+    message
 }
 
 /// Describes a public key that signs with `scheme` the way metadata lists
@@ -226,6 +256,7 @@ enum Algorithm {
     EcdsaP256Sha256,
     EcdsaP384Sha384,
     RsaPss(RsaPssHash),
+    MlDsa(MlDsaParameterSet),
 }
 
 /// The hash function of an RSA-PSS algorithm, used both for the message
@@ -237,6 +268,14 @@ enum RsaPssHash {
     Sha512,
 }
 
+/// An ML-DSA parameter set (FIPS 204).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MlDsaParameterSet {
+    MlDsa44,
+    MlDsa65,
+    MlDsa87,
+}
+
 impl Algorithm {
     fn from_scheme(scheme: &SignatureScheme) -> Option<Self> {
         match scheme {
@@ -246,6 +285,9 @@ impl Algorithm {
             SignatureScheme::RsassaPssSha256 => Some(Algorithm::RsaPss(RsaPssHash::Sha256)),
             SignatureScheme::RsassaPssSha384 => Some(Algorithm::RsaPss(RsaPssHash::Sha384)),
             SignatureScheme::RsassaPssSha512 => Some(Algorithm::RsaPss(RsaPssHash::Sha512)),
+            SignatureScheme::MlDsa44V1 => Some(Algorithm::MlDsa(MlDsaParameterSet::MlDsa44)),
+            SignatureScheme::MlDsa65V1 => Some(Algorithm::MlDsa(MlDsaParameterSet::MlDsa65)),
+            SignatureScheme::MlDsa87V1 => Some(Algorithm::MlDsa(MlDsaParameterSet::MlDsa87)),
             SignatureScheme::Other(_) => None,
         }
     }
@@ -258,6 +300,9 @@ impl Algorithm {
             Algorithm::RsaPss(RsaPssHash::Sha256) => SignatureScheme::RsassaPssSha256,
             Algorithm::RsaPss(RsaPssHash::Sha384) => SignatureScheme::RsassaPssSha384,
             Algorithm::RsaPss(RsaPssHash::Sha512) => SignatureScheme::RsassaPssSha512,
+            Algorithm::MlDsa(MlDsaParameterSet::MlDsa44) => SignatureScheme::MlDsa44V1,
+            Algorithm::MlDsa(MlDsaParameterSet::MlDsa65) => SignatureScheme::MlDsa65V1,
+            Algorithm::MlDsa(MlDsaParameterSet::MlDsa87) => SignatureScheme::MlDsa87V1,
         }
     }
 
@@ -266,6 +311,16 @@ impl Algorithm {
             Algorithm::Ed25519 => KeyType::Ed25519,
             Algorithm::EcdsaP256Sha256 | Algorithm::EcdsaP384Sha384 => KeyType::Ecdsa,
             Algorithm::RsaPss(_) => KeyType::Rsa,
+            Algorithm::MlDsa(_) => KeyType::MlDsa,
+        }
+    }
+
+    /// The message this algorithm signs for a metadata payload: the payload
+    /// itself, except for ML-DSA (TAP 21).
+    fn message(self, payload: &[u8]) -> Cow<'_, [u8]> {
+        match self {
+            Algorithm::MlDsa(_) => Cow::Owned(ml_dsa_message(payload)),
+            _ => Cow::Borrowed(payload),
         }
     }
 

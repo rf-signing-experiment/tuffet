@@ -2,6 +2,12 @@
 
 use ed25519_dalek as ed25519;
 use getrandom::SysRng;
+use ml_dsa::pkcs8::PrivateKeyInfoRef;
+use ml_dsa::pkcs8::der::asn1::OctetStringRef;
+use ml_dsa::pkcs8::der::{self, AnyRef, Reader as _, SliceReader};
+use ml_dsa::pkcs8::spki::AssociatedAlgorithmIdentifier;
+use ml_dsa::signature::Keypair as _;
+use ml_dsa::{MlDsa44, MlDsa65, MlDsa87, MlDsaParams};
 use p256::elliptic_curve::Generate;
 use rand_core::UnwrapErr;
 use rsa::pkcs8::{DecodePrivateKey, DecodePublicKey, EncodePublicKey};
@@ -10,9 +16,17 @@ use rsa::traits::PublicKeyParts;
 use rsa::{RsaPrivateKey, RsaPublicKey};
 use sha2::{Digest, Sha256, Sha384, Sha512};
 
-use super::{Algorithm, CryptoError, HashAlgorithm, RsaPssHash};
+use super::{Algorithm, CryptoError, HashAlgorithm, MlDsaParameterSet, RsaPssHash};
 
 const GENERATED_RSA_BITS: usize = 3072;
+
+/// An ML-DSA parameter set, with the identifiers of its keys.
+trait MlDsaParameters: MlDsaParams + AssociatedAlgorithmIdentifier<Params = AnyRef<'static>> {}
+
+impl<P: MlDsaParams + AssociatedAlgorithmIdentifier<Params = AnyRef<'static>>> MlDsaParameters
+    for P
+{
+}
 
 pub(super) enum Hasher {
     Sha256(Sha256),
@@ -88,8 +102,33 @@ pub(super) fn verify(
                 }
             }
         }
+        Algorithm::MlDsa(set) => {
+            return match set {
+                MlDsaParameterSet::MlDsa44 => {
+                    verify_ml_dsa::<MlDsa44>(public_key, message, signature)
+                }
+                MlDsaParameterSet::MlDsa65 => {
+                    verify_ml_dsa::<MlDsa65>(public_key, message, signature)
+                }
+                MlDsaParameterSet::MlDsa87 => {
+                    verify_ml_dsa::<MlDsa87>(public_key, message, signature)
+                }
+            };
+        }
     };
     result.map_err(|_| CryptoError::BadSignature)
+}
+
+fn verify_ml_dsa<P: MlDsaParameters>(
+    public_key: &[u8],
+    message: &[u8],
+    signature: &[u8],
+) -> Result<(), CryptoError> {
+    let key =
+        ml_dsa::VerifyingKey::<P>::from_public_key_der(public_key).map_err(invalid_public_key)?;
+    ml_dsa::Signature::<P>::try_from(signature)
+        .and_then(|signature| key.verify(message, &signature))
+        .map_err(|_| CryptoError::BadSignature)
 }
 
 pub(super) fn check_public_key(algorithm: Algorithm, public_key: &[u8]) -> Result<(), CryptoError> {
@@ -109,6 +148,18 @@ pub(super) fn check_public_key(algorithm: Algorithm, public_key: &[u8]) -> Resul
         Algorithm::RsaPss(_) => RsaPublicKey::from_public_key_der(public_key)
             .map(drop)
             .map_err(invalid_public_key),
+        Algorithm::MlDsa(set) => match set {
+            MlDsaParameterSet::MlDsa44 => {
+                ml_dsa::VerifyingKey::<MlDsa44>::from_public_key_der(public_key).map(drop)
+            }
+            MlDsaParameterSet::MlDsa65 => {
+                ml_dsa::VerifyingKey::<MlDsa65>::from_public_key_der(public_key).map(drop)
+            }
+            MlDsaParameterSet::MlDsa87 => {
+                ml_dsa::VerifyingKey::<MlDsa87>::from_public_key_der(public_key).map(drop)
+            }
+        }
+        .map_err(invalid_public_key),
     }
 }
 
@@ -122,6 +173,9 @@ pub(super) enum SigningKey {
     P256(p256::ecdsa::SigningKey),
     P384(p384::ecdsa::SigningKey),
     RsaPss(RsaPssHash, RsaPrivateKey),
+    MlDsa44(ml_dsa::SigningKey<MlDsa44>),
+    MlDsa65(ml_dsa::SigningKey<MlDsa65>),
+    MlDsa87(ml_dsa::SigningKey<MlDsa87>),
 }
 
 impl SigningKey {
@@ -139,6 +193,15 @@ impl SigningKey {
                 hash,
                 RsaPrivateKey::new(&mut rng, GENERATED_RSA_BITS).map_err(invalid_private_key)?,
             ),
+            Algorithm::MlDsa(MlDsaParameterSet::MlDsa44) => {
+                Self::MlDsa44(ml_dsa::SigningKey::generate_from_rng(&mut rng))
+            }
+            Algorithm::MlDsa(MlDsaParameterSet::MlDsa65) => {
+                Self::MlDsa65(ml_dsa::SigningKey::generate_from_rng(&mut rng))
+            }
+            Algorithm::MlDsa(MlDsaParameterSet::MlDsa87) => {
+                Self::MlDsa87(ml_dsa::SigningKey::generate_from_rng(&mut rng))
+            }
         })
     }
 
@@ -153,6 +216,15 @@ impl SigningKey {
         if let Ok(key) = p384::ecdsa::SigningKey::from_pkcs8_der(der) {
             return Ok(Self::P384(key));
         }
+        if let Some(key) = ml_dsa_from_pkcs8_der(der) {
+            return Ok(Self::MlDsa44(key));
+        }
+        if let Some(key) = ml_dsa_from_pkcs8_der(der) {
+            return Ok(Self::MlDsa65(key));
+        }
+        if let Some(key) = ml_dsa_from_pkcs8_der(der) {
+            return Ok(Self::MlDsa87(key));
+        }
         match RsaPrivateKey::from_pkcs8_der(der) {
             Ok(key) => Ok(Self::RsaPss(RsaPssHash::Sha256, key)),
             Err(_) => Err(invalid_private_key("unsupported or malformed PKCS#8 key")),
@@ -165,6 +237,9 @@ impl SigningKey {
             Self::P256(_) => Algorithm::EcdsaP256Sha256,
             Self::P384(_) => Algorithm::EcdsaP384Sha384,
             Self::RsaPss(hash, _) => Algorithm::RsaPss(*hash),
+            Self::MlDsa44(_) => Algorithm::MlDsa(MlDsaParameterSet::MlDsa44),
+            Self::MlDsa65(_) => Algorithm::MlDsa(MlDsaParameterSet::MlDsa65),
+            Self::MlDsa87(_) => Algorithm::MlDsa(MlDsaParameterSet::MlDsa87),
         }
     }
 
@@ -174,6 +249,9 @@ impl SigningKey {
             Self::P256(key) => key.verifying_key().to_public_key_der(),
             Self::P384(key) => key.verifying_key().to_public_key_der(),
             Self::RsaPss(_, key) => key.to_public_key().to_public_key_der(),
+            Self::MlDsa44(key) => key.verifying_key().to_public_key_der(),
+            Self::MlDsa65(key) => key.verifying_key().to_public_key_der(),
+            Self::MlDsa87(key) => key.verifying_key().to_public_key_der(),
         };
         Ok(der.map_err(invalid_private_key)?.into_vec())
     }
@@ -204,8 +282,49 @@ impl SigningKey {
                         .to_vec(),
                 }
             }
+            Self::MlDsa44(key) => sign_ml_dsa(key, message)?,
+            Self::MlDsa65(key) => sign_ml_dsa(key, message)?,
+            Self::MlDsa87(key) => sign_ml_dsa(key, message)?,
         })
     }
+}
+
+/// Loads an ML-DSA private key in one of the PKCS#8 forms that include the
+/// seed (RFC 9881): `seed`, or `both`, which OpenSSL writes by default.
+fn ml_dsa_from_pkcs8_der<P: MlDsaParameters>(der: &[u8]) -> Option<ml_dsa::SigningKey<P>> {
+    if let Ok(key) = ml_dsa::SigningKey::<P>::from_pkcs8_der(der) {
+        return Some(key);
+    }
+    let info = PrivateKeyInfoRef::try_from(der).ok()?;
+    info.algorithm
+        .assert_algorithm_oid(P::ALGORITHM_IDENTIFIER.oid)
+        .ok()?;
+    let mut reader = SliceReader::new(info.private_key.as_bytes()).ok()?;
+    let (seed, expanded) = reader
+        .sequence(|both| {
+            let seed: &OctetStringRef = both.decode()?;
+            let expanded: &OctetStringRef = both.decode()?;
+            Ok::<_, der::Error>((seed, expanded))
+        })
+        .ok()?;
+    reader.finish().ok()?;
+    let key = ml_dsa::SigningKey::<P>::from_seed(seed.as_bytes().try_into().ok()?);
+    // Like OpenSSL, reject a key whose two forms disagree.
+    #[allow(deprecated)] // in favor of the seed, which is what the key is built from
+    let expanded_from_seed = key.expanded_key().to_expanded();
+    (expanded_from_seed.as_slice() == expanded.as_bytes()).then_some(key)
+}
+
+/// Signs with the hedged variant of ML-DSA, which FIPS 204 recommends.
+fn sign_ml_dsa<P: MlDsaParams>(
+    key: &ml_dsa::SigningKey<P>,
+    message: &[u8],
+) -> Result<Vec<u8>, CryptoError> {
+    let signature = key
+        .expanded_key()
+        .sign_randomized(message, &[], &mut rng())
+        .map_err(|error| CryptoError::Signing(Box::new(error)))?;
+    Ok(signature.encode().to_vec())
 }
 
 fn rng() -> UnwrapErr<SysRng> {

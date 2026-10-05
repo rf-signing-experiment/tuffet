@@ -1,5 +1,2 @@
 # Tests rftuf is expected to fail (see the tuf-conformance README). The suite
 # still runs them, and fails if one of them passes: remove entries once fixed.
-
-# ML-DSA (post-quantum) keys are not part of the TUF specification.
-test_mldsa_keytype_and_scheme

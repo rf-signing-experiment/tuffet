@@ -16,7 +16,9 @@ pub trait Signer: Send + Sync {
     fn public_key(&self) -> &Key;
 
     /// Signs `message` (the canonical form of a metadata payload) and returns
-    /// the raw signature bytes, encoded as required by the key's scheme.
+    /// the raw signature bytes, encoded as required by the key's scheme. An
+    /// ML-DSA key signs [`ml_dsa_message(message)`](super::ml_dsa_message)
+    /// rather than `message` itself.
     fn sign(&self, message: &[u8]) -> Result<Vec<u8>, CryptoError>;
 }
 
@@ -69,7 +71,7 @@ impl Signer for PrivateKey {
     }
 
     fn sign(&self, message: &[u8]) -> Result<Vec<u8>, CryptoError> {
-        self.inner.sign(message)
+        self.inner.sign(&self.inner.algorithm().message(message))
     }
 }
 

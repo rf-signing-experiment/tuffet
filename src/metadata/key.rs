@@ -127,6 +127,8 @@ string_enum! {
         Ed25519 => "ed25519",
         Ecdsa => "ecdsa",
         Rsa => "rsa",
+        /// ML-DSA (FIPS 204), as specified by TAP 21.
+        MlDsa => "ml-dsa",
     }
 }
 
@@ -147,6 +149,12 @@ string_enum! {
         /// RSA-PSS with SHA-512 and MGF1-SHA-512. Not defined by the
         /// specification, but used by other implementations.
         RsassaPssSha512 => "rsassa-pss-sha512",
+        /// ML-DSA-44 with version 1 of the TAP 21 protocol.
+        MlDsa44V1 => "ml-dsa-44/1",
+        /// ML-DSA-65 with version 1 of the TAP 21 protocol.
+        MlDsa65V1 => "ml-dsa-65/1",
+        /// ML-DSA-87 with version 1 of the TAP 21 protocol.
+        MlDsa87V1 => "ml-dsa-87/1",
     }
 }
 
@@ -161,6 +169,9 @@ impl SignatureScheme {
             SignatureScheme::RsassaPssSha256
             | SignatureScheme::RsassaPssSha384
             | SignatureScheme::RsassaPssSha512 => Some(KeyType::Rsa),
+            SignatureScheme::MlDsa44V1
+            | SignatureScheme::MlDsa65V1
+            | SignatureScheme::MlDsa87V1 => Some(KeyType::MlDsa),
             SignatureScheme::Other(_) => None,
         }
     }

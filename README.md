@@ -10,8 +10,6 @@ implementing the client workflow of the specification in [`tuf-spec.md`](tuf-spe
 | [`rftuf-http`](rftuf-http/) | An HTTP(S) `Transport` built on reqwest. |
 | [`rftuf-conformance`](conformance/) | The client-under-test for the [tuf-conformance] test suite (not published). |
 
-The [`fuzz`](fuzz/) directory holds fuzz targets, in a crate of its own.
-
 ## Layers
 
 **`Updater`**: runs the whole client workflow. It fetches metadata through a
@@ -51,10 +49,11 @@ files. It is also the API for creating metadata (see
   by signatures and preserved on re-encoding.
 - **Cryptography** lives entirely in [`src/crypto`](src/crypto/). The
   backend-neutral part holds the TUF rules (schemes, key encodings, RSA key
-  sizes); a backend supplies the primitives (see [Features](#features)).
-  Supported schemes: `ed25519`, `ecdsa-sha2-nistp256`, `ecdsa-sha2-nistp384`
-  and `rsassa-pss-sha256`/`-sha384`/`-sha512` (RSA keys of 2048 to 8192
-  bits). Custom signers
+  sizes, the message ML-DSA signs); a backend supplies the primitives (see
+  [Features](#features)). Supported schemes: `ed25519`,
+  `ecdsa-sha2-nistp256`, `ecdsa-sha2-nistp384`,
+  `rsassa-pss-sha256`/`-sha384`/`-sha512` (RSA keys of 2048 to 8192 bits)
+  and the post-quantum `ml-dsa-44/1`/`-65/1`/`-87/1` of [TAP 21]. Custom signers
   (HSM, KMS) implement `crypto::Signer`, and `crypto::public_key_from_spki`
   (or `_from_pem`) turns their public keys into metadata `Key`s.
 - **I/O** is defined by two traits: `transport::Transport` (async; returns
@@ -77,17 +76,24 @@ files. It is also the API for creating metadata (see
 | `rftuf-http` | `rustls` (default), `native-tls` | TLS implementation of the default HTTP client. |
 | `rftuf-http` | `rustcrypto` (default), `aws-lc-rs` | Passed through to `rftuf`. With `rustls`, `aws-lc-rs` means a single crypto library. |
 
-The backends behave the same, with one exception: the `aws-lc-rs` backend only
-verifies RSA-PSS signatures whose salt is as long as the digest, because
-`aws-lc-rs` offers no other option. That is the length python-tuf, go-tuf and
-this crate sign with; the `rustcrypto` backend also accepts other lengths.
+The backends behave the same, with two exceptions:
+
+- The `aws-lc-rs` backend only verifies RSA-PSS signatures whose salt is as
+  long as the digest, because `aws-lc-rs` offers no other option. That is the
+  length python-tuf, go-tuf and this crate sign with; the `rustcrypto` backend
+  also accepts other lengths.
+- The `rustcrypto` backend only loads ML-DSA private keys that include the
+  seed (OpenSSL's default form and the seed-only form); `aws-lc-rs` also loads
+  keys that hold just the expanded key.
 
 ## Dependencies to know about
 
 `rsa` is pinned to `0.10.0-rc.18`. The stable 0.9 line has an open timing
 advisory (RUSTSEC-2023-0071) and can't auto-detect PSS salt lengths, which
 interoperability needs. The other RustCrypto crates (ed25519-dalek 3, p256/p384
-0.14, sha2 0.11) are stable releases of the same generation.
+0.14, sha2 0.11) are stable releases of the same generation. ML-DSA comes from
+`ml-dsa` 0.1, which has not been independently audited; use the `aws-lc-rs`
+backend if that matters for your post-quantum keys.
 
 ## Testing
 
@@ -110,37 +116,12 @@ Besides unit tests, the suite includes:
 ### Conformance
 
 The [tuf-conformance] suite tests the client against the specification and
-other implementations' behavior. rftuf passes all its tests except those for
-ML-DSA keys, which are not part of the specification
-([`conformance/rftuf-conformance.xfails`](conformance/rftuf-conformance.xfails)).
+other implementations' behavior. rftuf passes all its tests; tests expected to
+fail would be listed in
+[`conformance/rftuf-conformance.xfails`](conformance/rftuf-conformance.xfails).
 To run it locally (needs git, Python 3.10+ and `faketime`):
 
 ```sh
 conformance/run.sh                          # extra arguments go to pytest, e.g. -k NAME -rA
 BACKEND=aws-lc-rs conformance/run.sh
 ```
-
-### Fuzzing
-
-See [`fuzz/README.md`](fuzz/README.md). In short, with a nightly toolchain and
-cargo-fuzz installed, `fuzz/run.sh` runs every target for a minute.
-
-### CI
-
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml) checks formatting,
-clippy and docs; runs the tests on Linux (both backends), macOS and Windows;
-checks the minimum Rust version; runs tuf-conformance for both backends; and
-runs every fuzz target for a minute (ten in a weekly scheduled run).
-
-### Live repositories
-
-To try a live repository, run the example. For instance, against Sigstore,
-with a root obtained out of band:
-
-```sh
-cargo run -p rftuf-http --example download -- \
-    https://tuf-repo-cdn.sigstore.dev/ https://tuf-repo-cdn.sigstore.dev/targets/ \
-    root.json ./tuf-cache trusted_root.json trusted_root.json
-```
-
-[tuf-conformance]: https://github.com/theupdateframework/tuf-conformance

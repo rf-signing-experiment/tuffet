@@ -6,10 +6,16 @@ use aws_lc_rs::rand::SystemRandom;
 use aws_lc_rs::rsa::{self, KeySize};
 use aws_lc_rs::signature::{
     self, EcdsaKeyPair, EcdsaSigningAlgorithm, Ed25519KeyPair, KeyPair, ParsedPublicKey,
-    RsaKeyPair, VerificationAlgorithm,
+    PqdsaKeyPair, PqdsaSigningAlgorithm, RsaKeyPair, VerificationAlgorithm,
 };
 
-use super::{Algorithm, CryptoError, HashAlgorithm, RsaPssHash};
+use super::{Algorithm, CryptoError, HashAlgorithm, MlDsaParameterSet, RsaPssHash};
+
+const ML_DSA_PARAMETER_SETS: [MlDsaParameterSet; 3] = [
+    MlDsaParameterSet::MlDsa44,
+    MlDsaParameterSet::MlDsa65,
+    MlDsaParameterSet::MlDsa87,
+];
 
 const GENERATED_RSA_SIZE: KeySize = KeySize::Rsa3072;
 
@@ -59,6 +65,10 @@ fn parse_public_key(
         Algorithm::RsaPss(RsaPssHash::Sha256) => &signature::RSA_PSS_2048_8192_SHA256,
         Algorithm::RsaPss(RsaPssHash::Sha384) => &signature::RSA_PSS_2048_8192_SHA384,
         Algorithm::RsaPss(RsaPssHash::Sha512) => &signature::RSA_PSS_2048_8192_SHA512,
+        // Pure ML-DSA with an empty context.
+        Algorithm::MlDsa(MlDsaParameterSet::MlDsa44) => &signature::ML_DSA_44,
+        Algorithm::MlDsa(MlDsaParameterSet::MlDsa65) => &signature::ML_DSA_65,
+        Algorithm::MlDsa(MlDsaParameterSet::MlDsa87) => &signature::ML_DSA_87,
     };
     ParsedPublicKey::new(verification, public_key).map_err(invalid_public_key)
 }
@@ -72,6 +82,7 @@ pub(super) enum SigningKey {
     Ed25519(Ed25519KeyPair),
     Ecdsa(Algorithm, EcdsaKeyPair),
     RsaPss(RsaPssHash, RsaKeyPair),
+    MlDsa(MlDsaParameterSet, PqdsaKeyPair),
 }
 
 impl SigningKey {
@@ -84,6 +95,9 @@ impl SigningKey {
             }
             Algorithm::RsaPss(hash) => {
                 RsaKeyPair::generate(GENERATED_RSA_SIZE).map(|key| Self::RsaPss(hash, key))
+            }
+            Algorithm::MlDsa(set) => {
+                PqdsaKeyPair::generate(ml_dsa_signing(set)).map(|key| Self::MlDsa(set, key))
             }
         };
         key.map_err(invalid_private_key)
@@ -101,6 +115,11 @@ impl SigningKey {
                 return Ok(Self::Ecdsa(algorithm, key));
             }
         }
+        for set in ML_DSA_PARAMETER_SETS {
+            if let Ok(key) = PqdsaKeyPair::from_pkcs8(ml_dsa_signing(set), der) {
+                return Ok(Self::MlDsa(set, key));
+            }
+        }
         match RsaKeyPair::from_pkcs8(der) {
             Ok(key) => Ok(Self::RsaPss(RsaPssHash::Sha256, key)),
             Err(_) => Err(invalid_private_key("unsupported or malformed PKCS#8 key")),
@@ -112,6 +131,7 @@ impl SigningKey {
             Self::Ed25519(_) => Algorithm::Ed25519,
             Self::Ecdsa(algorithm, _) => *algorithm,
             Self::RsaPss(hash, _) => Algorithm::RsaPss(*hash),
+            Self::MlDsa(set, _) => Algorithm::MlDsa(*set),
         }
     }
 
@@ -120,6 +140,7 @@ impl SigningKey {
             Self::Ed25519(key) => return Ok(key.public_key().as_ref().to_vec()),
             Self::Ecdsa(_, key) => key.public_key().as_der(),
             Self::RsaPss(_, key) => key.public_key().as_der(),
+            Self::MlDsa(_, key) => key.public_key().as_der(),
         };
         Ok(der.map_err(invalid_private_key)?.as_ref().to_vec())
     }
@@ -143,6 +164,12 @@ impl SigningKey {
                     .map_err(signing_error)?;
                 Ok(signature)
             }
+            Self::MlDsa(set, key) => {
+                let mut signature = vec![0; ml_dsa_signing(*set).signature_len()];
+                let len = key.sign(message, &mut signature).map_err(signing_error)?;
+                signature.truncate(len);
+                Ok(signature)
+            }
         }
     }
 }
@@ -152,7 +179,17 @@ fn ecdsa_signing(algorithm: Algorithm) -> &'static EcdsaSigningAlgorithm {
     match algorithm {
         Algorithm::EcdsaP256Sha256 => &signature::ECDSA_P256_SHA256_ASN1_SIGNING,
         Algorithm::EcdsaP384Sha384 => &signature::ECDSA_P384_SHA384_ASN1_SIGNING,
-        Algorithm::Ed25519 | Algorithm::RsaPss(_) => unreachable!("{algorithm:?} is not ECDSA"),
+        Algorithm::Ed25519 | Algorithm::RsaPss(_) | Algorithm::MlDsa(_) => {
+            unreachable!("{algorithm:?} is not ECDSA")
+        }
+    }
+}
+
+fn ml_dsa_signing(set: MlDsaParameterSet) -> &'static PqdsaSigningAlgorithm {
+    match set {
+        MlDsaParameterSet::MlDsa44 => &signature::ML_DSA_44_SIGNING,
+        MlDsaParameterSet::MlDsa65 => &signature::ML_DSA_65_SIGNING,
+        MlDsaParameterSet::MlDsa87 => &signature::ML_DSA_87_SIGNING,
     }
 }
 

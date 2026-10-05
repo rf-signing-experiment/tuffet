@@ -28,6 +28,9 @@ fn generated_keys_sign_and_verify() {
         SignatureScheme::Ed25519,
         SignatureScheme::EcdsaSha2Nistp256,
         SignatureScheme::EcdsaSha2Nistp384,
+        SignatureScheme::MlDsa44V1,
+        SignatureScheme::MlDsa65V1,
+        SignatureScheme::MlDsa87V1,
     ] {
         let signer = PrivateKey::generate(&scheme).unwrap();
         assert_eq!(signer.public_key().scheme, scheme);
@@ -57,7 +60,7 @@ fn rsa_keys_sign_and_verify() {
 
 #[test]
 fn verifies_signatures_made_by_openssl() {
-    let cases: [(SignatureScheme, &[u8], &[u8]); 6] = [
+    let cases: [(SignatureScheme, &[u8], &[u8]); 9] = [
         (
             SignatureScheme::RsassaPssSha384,
             vector!("rsa.pub.pem"),
@@ -87,6 +90,21 @@ fn verifies_signatures_made_by_openssl() {
             SignatureScheme::Ed25519,
             vector!("ed25519.pub.hex"),
             vector!("ed25519.sig"),
+        ),
+        (
+            SignatureScheme::MlDsa44V1,
+            vector!("ml-dsa-44.pub.pem"),
+            vector!("ml-dsa-44.sig"),
+        ),
+        (
+            SignatureScheme::MlDsa65V1,
+            vector!("ml-dsa-65.pub.pem"),
+            vector!("ml-dsa-65.sig"),
+        ),
+        (
+            SignatureScheme::MlDsa87V1,
+            vector!("ml-dsa-87.pub.pem"),
+            vector!("ml-dsa-87.sig"),
         ),
     ];
     for (scheme, public, signature) in cases {
@@ -153,6 +171,63 @@ fn rsa_pss_salt_lengths_other_than_the_digest_length() {
 }
 
 #[test]
+fn ml_dsa_signs_the_tap21_message() {
+    let mut expected = b"tuf\x01".to_vec();
+    expected.extend(HashAlgorithm::Sha512.digest(MESSAGE));
+    assert_eq!(ml_dsa_message(MESSAGE), expected);
+
+    // Both OpenSSL's signature and ours are plain ML-DSA signatures of the
+    // TAP 21 message, which `verify_signature` builds from the payload.
+    let algorithm = Algorithm::MlDsa(MlDsaParameterSet::MlDsa44);
+    let public = decode_pem(&text(vector!("ml-dsa-44.pub.pem")), "PUBLIC KEY").unwrap();
+    let signer = PrivateKey::from_pkcs8_pem(&text(vector!("ml-dsa-44.key.pem"))).unwrap();
+    for signature in [
+        vector!("ml-dsa-44.sig").to_vec(),
+        signer.sign(MESSAGE).unwrap(),
+    ] {
+        backend::verify(algorithm, &public, &expected, &signature).unwrap();
+        assert!(backend::verify(algorithm, &public, MESSAGE, &signature).is_err());
+        assert!(verify_signature(signer.public_key(), &expected, &signature).is_err());
+    }
+}
+
+#[test]
+fn ml_dsa_signatures_only_verify_with_their_parameter_set() {
+    let sets: [(SignatureScheme, &[u8], &[u8]); 3] = [
+        (
+            SignatureScheme::MlDsa44V1,
+            vector!("ml-dsa-44.pub.pem"),
+            vector!("ml-dsa-44.sig"),
+        ),
+        (
+            SignatureScheme::MlDsa65V1,
+            vector!("ml-dsa-65.pub.pem"),
+            vector!("ml-dsa-65.sig"),
+        ),
+        (
+            SignatureScheme::MlDsa87V1,
+            vector!("ml-dsa-87.pub.pem"),
+            vector!("ml-dsa-87.sig"),
+        ),
+    ];
+    for (scheme, public, _) in &sets {
+        for (signed_with, _, signature) in &sets {
+            if scheme == signed_with {
+                continue;
+            }
+            let result = verify_signature(&key(scheme.clone(), public), MESSAGE, signature);
+            assert!(
+                matches!(result, Err(CryptoError::BadSignature)),
+                "{signed_with} checked as {scheme}"
+            );
+            // The key itself names its parameter set.
+            let result = verify_signature(&key(signed_with.clone(), public), MESSAGE, signature);
+            assert!(matches!(result, Err(CryptoError::InvalidPublicKey(_))));
+        }
+    }
+}
+
+#[test]
 fn verifies_rfc8032_ed25519_test_vector() {
     let public = b"d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a";
     let signature = hex::decode(
@@ -198,6 +273,26 @@ fn loads_pkcs8_keys_made_by_openssl() {
         vector!("ed25519.pub.hex"),
         vector!("ed25519.sig"),
     );
+    // OpenSSL's default form, with both the seed and the expanded key.
+    check(
+        vector!("ml-dsa-44.key.pem"),
+        SignatureScheme::MlDsa44V1,
+        vector!("ml-dsa-44.pub.pem"),
+        vector!("ml-dsa-44.sig"),
+    );
+    // Just the seed.
+    check(
+        vector!("ml-dsa-65.key.pem"),
+        SignatureScheme::MlDsa65V1,
+        vector!("ml-dsa-65.pub.pem"),
+        vector!("ml-dsa-65.sig"),
+    );
+    check(
+        vector!("ml-dsa-87.key.pem"),
+        SignatureScheme::MlDsa87V1,
+        vector!("ml-dsa-87.pub.pem"),
+        vector!("ml-dsa-87.sig"),
+    );
 
     let from_der = PrivateKey::from_pkcs8_der(vector!("p256.key.der")).unwrap();
     assert_eq!(
@@ -212,6 +307,29 @@ fn loads_pkcs8_keys_made_by_openssl() {
     assert!(matches!(
         PrivateKey::from_pkcs8_pem(&text(vector!("p256.pub.pem"))),
         Err(CryptoError::InvalidPrivateKey(message)) if message.contains("PRIVATE KEY")
+    ));
+}
+
+/// RFC 9881 ML-DSA private keys hold the seed, the expanded key or both. Only
+/// the `aws-lc-rs` backend loads keys without the seed; see the module docs.
+#[test]
+fn loads_ml_dsa_private_keys_with_consistent_forms() {
+    let expanded = PrivateKey::from_pkcs8_pem(&text(vector!("ml-dsa-44.expanded.key.pem")));
+    if cfg!(feature = "aws-lc-rs") {
+        assert_eq!(
+            expanded.unwrap().public_key().keyval.public.trim(),
+            text(vector!("ml-dsa-44.pub.pem"))
+        );
+    } else {
+        assert!(matches!(expanded, Err(CryptoError::InvalidPrivateKey(_))));
+    }
+
+    // The expanded key comes last; it must be the one the seed expands to.
+    let mut der = decode_pem(&text(vector!("ml-dsa-44.key.pem")), "PRIVATE KEY").unwrap();
+    *der.last_mut().unwrap() ^= 1;
+    assert!(matches!(
+        PrivateKey::from_pkcs8_der(&der),
+        Err(CryptoError::InvalidPrivateKey(_))
     ));
 }
 
@@ -303,6 +421,7 @@ fn public_keys_from_spki_match_the_keys_of_private_keys() {
         SignatureScheme::Ed25519,
         SignatureScheme::EcdsaSha2Nistp256,
         SignatureScheme::EcdsaSha2Nistp384,
+        SignatureScheme::MlDsa65V1,
     ] {
         let signer = PrivateKey::generate(&scheme).unwrap();
         let expected = signer.public_key();
@@ -318,10 +437,11 @@ fn public_keys_from_spki_match_the_keys_of_private_keys() {
 
 #[test]
 fn public_keys_from_pem_are_reencoded() {
-    let cases: [(SignatureScheme, &[u8]); 3] = [
+    let cases: [(SignatureScheme, &[u8]); 4] = [
         (SignatureScheme::EcdsaSha2Nistp256, vector!("p256.pub.pem")),
         (SignatureScheme::EcdsaSha2Nistp384, vector!("p384.pub.pem")),
         (SignatureScheme::RsassaPssSha256, vector!("rsa.pub.pem")),
+        (SignatureScheme::MlDsa87V1, vector!("ml-dsa-87.pub.pem")),
     ];
     for (scheme, pem) in cases {
         let expected = key(scheme.clone(), pem);
@@ -398,11 +518,14 @@ mod backend_parity {
 
     #[test]
     fn backends_derive_the_same_keys_and_verify_each_others_signatures() {
-        let keys: [&[u8]; 4] = [
+        let keys: [&[u8]; 7] = [
             vector!("ed25519.key.pem"),
             vector!("p256.key.pem"),
             vector!("p384.key.pem"),
             vector!("rsa.key.pem"),
+            vector!("ml-dsa-44.key.pem"),
+            vector!("ml-dsa-65.key.pem"),
+            vector!("ml-dsa-87.key.pem"),
         ];
         for private in keys {
             let der = decode_pem(&text(private), "PRIVATE KEY").unwrap();
