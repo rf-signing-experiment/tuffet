@@ -84,5 +84,5 @@ pub use client::{Updater, UpdaterConfig};
 pub use error::{Error, Result};
 pub use trusted::{TargetInfo, TrustedMetadata};
 
-/// This crate uses [`jiff::Timestamp`](jiff::Timestamp) for timestamps.
+/// This crate uses [`jiff::Timestamp`] for timestamps.
 pub use jiff;

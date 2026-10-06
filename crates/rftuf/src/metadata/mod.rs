@@ -2,7 +2,7 @@
 //! verification of individual metadata files.
 //!
 //! This is the lowest layer of the crate. It knows nothing about the update
-//! workflow (see [`trusted`](crate::trusted) and [`updater`](crate::updater)
+//! workflow (see [`trusted`](crate::trusted) and [`client`](crate::client)
 //! for that), so it is also what repository tooling uses to *create*
 //! metadata: build a role payload such as [`Targets`], wrap it in
 //! [`Metadata`], [sign](Metadata::sign) it and [encode](Metadata::to_bytes) it.

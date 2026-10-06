@@ -21,7 +21,7 @@
 //!    [`delegated_targets`](TrustedMetadata::delegated_targets).
 //!
 //! Any error aborts the update. Calls made out of order fail with
-//! [`Error::InvalidState`]. The [`Updater`](crate::updater::Updater) is the
+//! [`Error::InvalidState`]. The [`Updater`](crate::client::Updater) is the
 //! standard driver of this state machine; use it directly to supply your own
 //! I/O.
 
