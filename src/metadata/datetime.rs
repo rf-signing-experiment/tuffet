@@ -36,26 +36,3 @@ fn parse(text: &str) -> Result<DateTime<Utc>, String> {
     }
     Ok(time)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use chrono::TimeZone;
-
-    #[test]
-    fn parses_the_specified_format_only() {
-        assert_eq!(
-            parse("1985-10-21T01:21:00Z").unwrap(),
-            Utc.with_ymd_and_hms(1985, 10, 21, 1, 21, 0).unwrap()
-        );
-        for bad in [
-            "1985-10-21T01:21:00",
-            "1985-10-21T01:21:00.5Z",
-            "1985-10-21T01:21:00+00:00",
-            "1985-10-21 01:21:00Z",
-            "1985-1-21T01:21:00Z",
-        ] {
-            assert!(parse(bad).is_err(), "{bad} should be rejected");
-        }
-    }
-}

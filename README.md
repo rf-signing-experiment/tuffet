@@ -38,7 +38,7 @@ I/O. Use these to drive the workflow with your own networking and storage.
 **`metadata`**: the role payloads (`Root`, `Timestamp`, `Snapshot`, `Targets`),
 the signed envelope `Metadata<T>`, and signing and verification of single
 files. It is also the API for creating metadata (see
-[`tests/common/mod.rs`](tests/common/mod.rs) for a small repository built with it).
+[`tests/support/repo.rs`](tests/support/repo.rs) for a small repository built with it).
 
 ## Design notes
 
@@ -103,15 +103,20 @@ cargo test -p rftuf --no-default-features -F aws-lc-rs    # aws-lc-rs backend
 cargo test -p rftuf --all-features                        # also compares the two backends
 ```
 
-Besides unit tests, the suite includes:
+The tests are organized by section of the specification, so that each
+requirement can be checked against the tests that enforce it. See
+[`tests/README.md`](tests/README.md) for the strategy, the layout, and the
+attacks each test detects.
 
-- [`tests/trusted.rs`](tests/trusted.rs): the verification rules, attack by attack.
-- [`tests/updater.rs`](tests/updater.rs): end-to-end updates against generated
-  repositories (root rotation, fast-forward recovery, delegations, consistent
-  snapshots, tampered targets).
-- Interoperability fixtures in [`tests/data`](tests/data/): python-tuf's test
-  repository (verified, and updated from on disk and over HTTP) and
+- [`tests/workflow`](tests/workflow/): the client workflow (section 5), step
+  by step, against generated repositories.
+- [`tests/metadata`](tests/metadata/): the metadata formats (section 4),
+  with snapshots of the encoding of each role.
+- [`tests/crypto`](tests/crypto/): key types and signature schemes, against
   OpenSSL-made keys and signatures.
+- [`tests/io`](tests/io/) and [`tests/interop.rs`](tests/interop.rs): the
+  built-in transports and stores, and python-tuf's test repository (updated
+  from on disk here, and over HTTP in `rftuf-http`).
 
 ### Conformance
 

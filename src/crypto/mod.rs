@@ -377,5 +377,7 @@ fn check_rsa_key_size(bits: usize) -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(test)]
-mod tests;
+// The tests of this module are in `tests/crypto`. This one compares the
+// backends with each other, which needs both of them, and their private API.
+#[cfg(all(test, feature = "rustcrypto", feature = "aws-lc-rs"))]
+mod backend_parity;

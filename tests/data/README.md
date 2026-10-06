@@ -7,7 +7,12 @@
   signatures are of the [TAP 21] message for `message.txt`; the ML-DSA-44 and
   -87 keys are in OpenSSL's default form (seed and expanded key), the
   ML-DSA-65 key is seed-only, and `ml-dsa-44.expanded.key.pem` is the
-  ML-DSA-44 key without its seed. The private keys are test keys only.
+  ML-DSA-44 key without its seed. The RSA keys of unusual sizes test the
+  key size limits: `rsa1024.pub.pem`, `rsa2047.*` (with
+  `rsa2047-pss.sig`, an RSA-PSS SHA-256 signature with a digest-length
+  salt), `rsa8192.pub.pem` and `rsa8200.pub.pem`, made with
+  `openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:BITS`. The
+  private keys are test keys only.
 - `python-tuf/`: the test repository of the TUF reference implementation,
   copied unmodified from
   <https://github.com/theupdateframework/python-tuf/tree/develop/tests/repository_data/repository>.

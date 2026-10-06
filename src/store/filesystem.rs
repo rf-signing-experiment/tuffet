@@ -57,33 +57,3 @@ impl MetadataStore for FilesystemStore {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn stores_loads_and_removes() {
-        let dir = tempfile::tempdir().unwrap();
-        let store = FilesystemStore::new(dir.path().join("nested/metadata")).unwrap();
-        assert_eq!(store.load("root.json").unwrap(), None);
-        store.store("root.json", b"one").unwrap();
-        store.store("root.json", b"two").unwrap();
-        assert_eq!(
-            store.load("root.json").unwrap().as_deref(),
-            Some(&b"two"[..])
-        );
-        store.remove("root.json").unwrap();
-        store.remove("root.json").unwrap();
-        assert_eq!(store.load("root.json").unwrap(), None);
-    }
-
-    #[test]
-    fn rejects_names_that_escape_the_directory() {
-        let dir = tempfile::tempdir().unwrap();
-        let store = FilesystemStore::new(dir.path().join("metadata")).unwrap();
-        assert!(store.store("../root.json", b"x").is_err());
-        assert!(store.load("a/b.json").is_err());
-        assert!(!dir.path().join("root.json").exists());
-    }
-}

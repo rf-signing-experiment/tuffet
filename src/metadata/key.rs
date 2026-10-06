@@ -176,36 +176,3 @@ impl SignatureScheme {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn known_and_unknown_values_round_trip() {
-        for value in [
-            "ed25519",
-            "ecdsa-sha2-nistp256",
-            "rsassa-pss-sha256",
-            "sphincs+",
-        ] {
-            let scheme: SignatureScheme = serde_json::from_value(value.into()).unwrap();
-            assert_eq!(serde_json::to_value(&scheme).unwrap(), value);
-        }
-        assert_eq!(SignatureScheme::from("ed25519"), SignatureScheme::Ed25519);
-        assert_eq!(KeyType::from("dsa"), KeyType::Other("dsa".into()));
-    }
-
-    #[test]
-    fn key_preserves_unrecognized_fields() {
-        let json = serde_json::json!({
-            "keytype": "ed25519",
-            "scheme": "ed25519",
-            "keyval": {"public": "abcd", "extra": 1},
-            "keyid_hash_algorithms": ["sha256", "sha512"],
-        });
-        let key: Key = serde_json::from_value(json.clone()).unwrap();
-        assert_eq!(key.keyval.unrecognized_fields["extra"], 1);
-        assert_eq!(serde_json::to_value(&key).unwrap(), json);
-    }
-}

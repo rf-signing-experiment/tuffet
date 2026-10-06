@@ -67,17 +67,3 @@ impl<'de> Deserialize<'de> for HexBytes {
             .map_err(|e| D::Error::custom(format!("invalid hex string {encoded:?}: {e}")))
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn round_trips_and_accepts_uppercase() {
-        let bytes: HexBytes = serde_json::from_str(r#""00FFab""#).unwrap();
-        assert_eq!(&*bytes, &[0x00, 0xff, 0xab]);
-        assert_eq!(serde_json::to_string(&bytes).unwrap(), r#""00ffab""#);
-        assert!(serde_json::from_str::<HexBytes>(r#""abc""#).is_err());
-        assert!(serde_json::from_str::<HexBytes>(r#""zz""#).is_err());
-    }
-}

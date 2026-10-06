@@ -210,6 +210,3 @@ fn validate_role_keys(role: &str, keyids: &[KeyId], threshold: u64) -> Result<()
     }
     Ok(())
 }
-
-#[cfg(test)]
-mod tests;

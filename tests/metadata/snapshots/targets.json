@@ -1,0 +1,87 @@
+{
+  "signatures": [
+    {
+      "keyid": "1e107b19915b79ded2f6e0c78d0e01da8b0ecfe9ef3c6ea5f29e2a52597d63e3",
+      "sig": "d36f86b5b548c5abe6a8645cf0704cc8ffad14174e99d7b039713fbe08f3169077be9b434b3d3bc0c99810e1b6f13c37c247b9bedd1a8a956fcdc04d7c50b90a"
+    }
+  ],
+  "signed": {
+    "_type": "targets",
+    "spec_version": "1.0.36",
+    "version": 3,
+    "expires": "2030-01-01T00:00:00Z",
+    "targets": {
+      "dir/package.tgz": {
+        "length": 7,
+        "hashes": {
+          "sha256": "bc4a71180870f7945155fbb02f4b0a2e3faa2a62d6d31b7039013055ed19869a"
+        },
+        "custom": {
+          "requires": [
+            "libc"
+          ],
+          "version": "1.2.3"
+        }
+      },
+      "file.txt": {
+        "length": 4,
+        "hashes": {
+          "sha256": "3b9c358f36f0a31b6ad3e14f309c7cf198ac9246e8316f9ce543d5b19ac02b80",
+          "sha512": "bf0c4cb323d5631e5e07990b52512d9b57d48497d289d253dec65903cb480024f0bb6b9f7a8b0df53b55f98a89607892425f1ca304290dc3a2c70f4a818e8424"
+        }
+      }
+    },
+    "delegations": {
+      "keys": {
+        "271d0ecc8542f30bf609050e76823ed5e0e38e204126757efe234757807c3f8c": {
+          "keytype": "ed25519",
+          "scheme": "ed25519",
+          "keyval": {
+            "public": "4d0a2bd86abeb69a61e7622cb2cc822ec1ab86306d166c799b8ca899379b3a1d"
+          }
+        },
+        "34a1acabc65b3ffb9d87e592a6822e358435e060a9a2d4e1085f11801c82b3cf": {
+          "keytype": "ed25519",
+          "scheme": "ed25519",
+          "keyval": {
+            "public": "aa40c6a2aec2d179e5e0777e24ff8e8acadd285a49a236971092b786469fa33e"
+          }
+        },
+        "b290c555578b7626f91d0d1bd3116dff63b2733c409a77c2c9393eb464c32a3b": {
+          "keytype": "ed25519",
+          "scheme": "ed25519",
+          "keyval": {
+            "public": "0c8560a03c6ad8339d1e6b9a404a97f1ad5550db2639423dff6a0238841c6e8d"
+          }
+        }
+      },
+      "roles": [
+        {
+          "name": "project",
+          "keyids": [
+            "271d0ecc8542f30bf609050e76823ed5e0e38e204126757efe234757807c3f8c"
+          ],
+          "threshold": 1,
+          "terminating": true,
+          "paths": [
+            "project/*",
+            "*.tgz"
+          ]
+        },
+        {
+          "name": "bins",
+          "keyids": [
+            "b290c555578b7626f91d0d1bd3116dff63b2733c409a77c2c9393eb464c32a3b",
+            "34a1acabc65b3ffb9d87e592a6822e358435e060a9a2d4e1085f11801c82b3cf"
+          ],
+          "threshold": 2,
+          "terminating": false,
+          "path_hash_prefixes": [
+            "0",
+            "1"
+          ]
+        }
+      ]
+    }
+  }
+}
