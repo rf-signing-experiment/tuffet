@@ -1,0 +1,5 @@
+# Test fixtures are signed, hashed or compared byte for byte: check them out
+# as committed, without the line-ending conversion of core.autocrlf (on by
+# default in Git for Windows, as on GitHub's Windows runners).
+crates/rftuf/tests/data/** -text
+crates/rftuf/tests/metadata/snapshots/** -text
