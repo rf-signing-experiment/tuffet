@@ -6,9 +6,9 @@ implementing the client workflow of the specification in [`tuf-spec.md`](tuf-spe
 
 | Crate | Purpose |
 | --- | --- |
-| [`rftuf`](src/) | The library. No HTTP client; filesystem and in-memory I/O are built in. |
-| [`rftuf-http`](rftuf-http/) | An HTTP(S) `Transport` built on reqwest. |
-| [`rftuf-conformance`](conformance/) | The client-under-test for the [tuf-conformance] test suite (not published). |
+| [`rftuf`](crates/rftuf/src/) | The library. No HTTP client; filesystem and in-memory I/O are built in. |
+| [`rftuf-http`](crates/rftuf-http/) | An HTTP(S) `Transport` built on reqwest. |
+| [`rftuf-conformance`](crates/conformance/) | The client-under-test for the [tuf-conformance] test suite (not published). |
 
 ## Layers
 
@@ -38,7 +38,7 @@ I/O. Use these to drive the workflow with your own networking and storage.
 **`metadata`**: the role payloads (`Root`, `Timestamp`, `Snapshot`, `Targets`),
 the signed envelope `Metadata<T>`, and signing and verification of single
 files. It is also the API for creating metadata (see
-[`tests/support/repo.rs`](tests/support/repo.rs) for a small repository built with it).
+[`tests/support/repo.rs`](crates/rftuf/tests/support/repo.rs) for a small repository built with it).
 
 ## Design notes
 
@@ -47,7 +47,7 @@ files. It is also the API for creating metadata (see
   python-tuf. Signatures are checked against the canonical form of the
   payload exactly as received, so fields this crate doesn't know are covered
   by signatures and preserved on re-encoding.
-- **Cryptography** lives entirely in [`src/crypto`](src/crypto/). The
+- **Cryptography** lives entirely in [`src/crypto`](crates/rftuf/src/crypto/). The
   backend-neutral part holds the TUF rules (schemes, key encodings, RSA key
   sizes, the message ML-DSA signs); a backend supplies the primitives (see
   [Features](#features)). Supported schemes: `ed25519`,
@@ -62,7 +62,7 @@ files. It is also the API for creating metadata (see
 - **Path patterns** in delegations follow glob(7), the shell convention the
   specification refers to. Each `/`-separated segment is matched with the
   `glob` crate (as python-tuf and go-tuf match segment by segment), so that
-  wildcards never match a `/`; see [`pattern.rs`](src/metadata/pattern.rs).
+  wildcards never match a `/`; see [`pattern.rs`](crates/rftuf/src/metadata/pattern.rs).
 - **Key IDs** are treated as opaque labels, as python-tuf and go-tuf do, rather
   than being recomputed as the specification requires; see the crate docs.
 - **Not supported:** multi-repository consensus (TAP 4) and the mirrors role.
@@ -71,8 +71,8 @@ files. It is also the API for creating metadata (see
 
 | Crate | Feature | Effect |
 | --- | --- | --- |
-| `rftuf` | `rustcrypto` (default) | Cryptography from the RustCrypto crates ([`rustcrypto.rs`](src/crypto/rustcrypto.rs)). |
-| `rftuf` | `aws-lc-rs` | Cryptography from AWS-LC ([`aws_lc.rs`](src/crypto/aws_lc.rs)). Takes precedence over `rustcrypto`; disable default features to leave RustCrypto out. Enable `aws-lc-rs/fips` in your own manifest for FIPS mode. |
+| `rftuf` | `rustcrypto` (default) | Cryptography from the RustCrypto crates ([`rustcrypto.rs`](crates/rftuf/src/crypto/rustcrypto.rs)). |
+| `rftuf` | `aws-lc-rs` | Cryptography from AWS-LC ([`aws_lc.rs`](crates/rftuf/src/crypto/aws_lc.rs)). Takes precedence over `rustcrypto`; disable default features to leave RustCrypto out. Enable `aws-lc-rs/fips` in your own manifest for FIPS mode. |
 | `rftuf-http` | `rustls` (default), `native-tls` | TLS implementation of the default HTTP client. |
 | `rftuf-http` | `rustcrypto` (default), `aws-lc-rs` | Passed through to `rftuf`. With `rustls`, `aws-lc-rs` means a single crypto library. |
 
@@ -105,16 +105,16 @@ cargo test -p rftuf --all-features                        # also compares the tw
 
 The tests are organized by section of the specification, so that each
 requirement can be checked against the tests that enforce it. See
-[`tests/README.md`](tests/README.md) for the strategy, the layout, and the
+[`tests/README.md`](crates/rftuf/tests/README.md) for the strategy, the layout, and the
 attacks each test detects.
 
-- [`tests/workflow`](tests/workflow/): the client workflow (section 5), step
+- [`tests/workflow`](crates/rftuf/tests/workflow/): the client workflow (section 5), step
   by step, against generated repositories.
-- [`tests/metadata`](tests/metadata/): the metadata formats (section 4),
+- [`tests/metadata`](crates/rftuf/tests/metadata/): the metadata formats (section 4),
   with snapshots of the encoding of each role.
-- [`tests/crypto`](tests/crypto/): key types and signature schemes, against
+- [`tests/crypto`](crates/rftuf/tests/crypto/): key types and signature schemes, against
   OpenSSL-made keys and signatures.
-- [`tests/io`](tests/io/) and [`tests/interop.rs`](tests/interop.rs): the
+- [`tests/io`](crates/rftuf/tests/io/) and [`tests/interop.rs`](crates/rftuf/tests/interop.rs): the
   built-in transports and stores, and python-tuf's test repository (updated
   from on disk here, and over HTTP in `rftuf-http`).
 
@@ -123,7 +123,7 @@ attacks each test detects.
 The [tuf-conformance] suite tests the client against the specification and
 other implementations' behavior. rftuf passes all its tests; tests expected to
 fail would be listed in
-[`conformance/rftuf-conformance.xfails`](conformance/rftuf-conformance.xfails).
+[`crates/conformance/rftuf-conformance.xfails`](crates/conformance/rftuf-conformance.xfails).
 To run it locally (needs git, Python 3.10+ and `faketime`):
 
 ```sh

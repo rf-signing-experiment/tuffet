@@ -1,0 +1,49 @@
+[package]
+name = "rftuf"
+version = "0.1.0"
+description = "A client library for The Update Framework (TUF)"
+edition.workspace = true
+rust-version.workspace = true
+readme = "../../README.md"
+
+[features]
+default = ["rustcrypto"]
+# Cryptography backends; see `src/crypto/mod.rs`. At least one must be enabled.
+# `aws-lc-rs` takes precedence if both are.
+rustcrypto = ["dep:sha2", "dep:ed25519-dalek", "dep:p256", "dep:p384", "dep:rsa", "dep:getrandom", "dep:rand_core", "dep:ml-dsa"]
+aws-lc-rs = ["dep:aws-lc-rs"]
+
+[dependencies]
+bytes.workspace = true
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+futures-core = "0.3"
+futures-util.workspace = true
+glob = "0.3"
+hex = "0.4"
+log = "0.4"
+pem-rfc7468 = { version = "1", features = ["alloc"] }
+percent-encoding = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tempfile.workspace = true
+thiserror = "2"
+
+# `aws-lc-rs` backend
+aws-lc-rs = { version = "1.18", optional = true }
+
+# `rustcrypto` backend
+ed25519-dalek = { version = "3", optional = true, features = ["pkcs8", "pem", "rand_core"] }
+getrandom = { version = "0.4", optional = true, features = ["sys_rng"] }
+ml-dsa = { version = "0.1", optional = true, default-features = false, features = ["alloc", "pkcs8", "rand_core", "zeroize"] }
+p256 = { version = "0.14", optional = true, default-features = false, features = ["ecdsa", "pem", "std"] }
+p384 = { version = "0.14", optional = true, default-features = false, features = ["ecdsa", "pem", "std"] }
+rand_core = { version = "0.10", optional = true }
+# Pinned: 0.10 is still a release candidate, but it is the only release line
+# with constant-time arithmetic (RUSTSEC-2023-0071) and PSS salt-length
+# auto-detection, which other TUF implementations rely on.
+rsa = { version = "=0.10.0-rc.18", optional = true }
+sha2 = { version = "0.11", optional = true }
+
+[dev-dependencies]
+futures-executor.workspace = true
+snapbox = "1"

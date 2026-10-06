@@ -144,7 +144,7 @@ async fn endless_responses_are_cut_off() {
 
 #[tokio::test]
 async fn updates_from_the_reference_implementations_repository_over_http() {
-    let data = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/data/python-tuf");
+    let data = Path::new(env!("CARGO_MANIFEST_DIR")).join("../rftuf/tests/data/python-tuf");
     let mut files = HashMap::new();
     for (dir, prefix) in [("metadata", "/metadata/"), ("targets", "/targets/")] {
         for entry in std::fs::read_dir(data.join(dir)).unwrap() {

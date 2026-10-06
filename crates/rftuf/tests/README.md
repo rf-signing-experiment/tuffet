@@ -1,6 +1,6 @@
 # Testing rftuf
 
-rftuf implements the client side of [the TUF specification](../tuf-spec.md)
+rftuf implements the client side of [the TUF specification](../../../tuf-spec.md)
 (version 1.0.36). The tests are organized so that a reviewer can check,
 section by section, that each requirement of the specification is enforced,
 and that each attack it lists is detected.
@@ -14,11 +14,11 @@ and that each attack it lists is detected.
 | I/O | `tests/io` | The built-in transports and stores, and an updater on a repository on disk. |
 | Interoperability | `tests/interop.rs` | The reference implementation's (python-tuf's) repository: its metadata verifies and re-encodes, and an updater updates from it. |
 | Backends | `cargo test` with each crypto feature | The whole suite passes with `rustcrypto` and with `aws-lc-rs`; `src/crypto/backend_parity.rs` checks that the two agree. |
-| Conformance | [`conformance/`](../conformance/) | The [tuf-conformance] suite, which tests the client against other implementations' behavior. |
+| Conformance | [`conformance/`](../../conformance/) | The [tuf-conformance] suite, which tests the client against other implementations' behavior. |
 
 Unit tests in `src/` are only for what the public API cannot reach:
 `src/paths.rs` and the backend parity check. The HTTP transport has its own
-tests in [`rftuf-http/tests`](../rftuf-http/tests/).
+tests in [`rftuf-http/tests`](../../rftuf-http/tests/).
 
 The verification rules are tested on `TrustedMetadata`, which applies them
 without I/O, so each test can feed it exactly the metadata it needs. What the
