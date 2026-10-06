@@ -16,7 +16,9 @@
 //!    [`update_snapshot`](TrustedMetadata::update_snapshot);
 //! 5. [`update_targets`](TrustedMetadata::update_targets), then
 //!    [`update_delegated_targets`](TrustedMetadata::update_delegated_targets)
-//!    for the delegated roles a [`TargetSearch`] asks for.
+//!    for the delegated roles a [`TargetSearch`] asks for; a role already
+//!    loaded is checked again for each delegation it is reached through, by
+//!    [`delegated_targets`](TrustedMetadata::delegated_targets).
 //!
 //! Any error aborts the update. Calls made out of order fail with
 //! [`Error::InvalidState`]. The [`Updater`](crate::updater::Updater) is the

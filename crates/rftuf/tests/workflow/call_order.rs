@@ -42,7 +42,7 @@ fn metadata_is_trusted_in_workflow_order() {
     assert_eq!(trusted.timestamp().unwrap().signed().version, 2);
     assert_eq!(trusted.snapshot().unwrap().signed().version, 2);
     assert_eq!(trusted.targets().unwrap().signed().version, 2);
-    let a = trusted.delegated_targets("a", "targets").unwrap().unwrap();
+    let a = trusted.targets_role("a").unwrap();
     assert!(a.signed().targets.contains_key("file"));
 }
 

@@ -216,12 +216,52 @@ fn delegated_targets_can_only_be_trusted_through_a_delegation() {
         .unwrap();
     // "a" delegates neither to itself nor to the top-level targets role.
     assert_err!(
+        trusted.update_delegated_targets(&a, "a", "a"),
+        Error::UnknownDelegation(role) if role == "a"
+    );
+    assert_err!(
         trusted.delegated_targets("a", "a"),
         Error::UnknownDelegation(role) if role == "a"
     );
     assert_err!(
         trusted.update_delegated_targets(&repo.file("targets.json"), "targets", "a"),
         Error::UnknownDelegation(role) if role == "targets"
+    );
+}
+
+/// 3.1.2.1 for a role that several roles delegate to, with different keys:
+/// its metadata must satisfy each delegation it is used through, not only
+/// the one it was loaded through, or one delegation would lend its trust to
+/// another.
+#[test]
+fn a_role_must_satisfy_each_delegation_it_is_used_through() {
+    let mut repo = TestRepo::new();
+    repo.delegate("targets", Delegation::to("a").paths(&["a/*"]));
+    repo.delegate("targets", Delegation::to("b").paths(&["b/*"]));
+    repo.delegate("a", Delegation::to("shared").paths(&["a/*"]));
+    // "b" delegates to "shared" too, but to a key that does not sign it.
+    repo.delegate("b", Delegation::to("shared").paths(&["b/*"]));
+    repo.commit();
+    let mut trusted = repo.trusted_with_targets();
+    trusted
+        .update_delegated_targets(&repo.file("a.json"), "a", "targets")
+        .unwrap();
+    trusted
+        .update_delegated_targets(&repo.file("b.json"), "b", "targets")
+        .unwrap();
+
+    assert!(trusted.delegated_targets("shared", "a").unwrap().is_none());
+    trusted
+        .update_delegated_targets(&repo.file("shared.json"), "shared", "a")
+        .unwrap();
+    assert!(trusted.delegated_targets("shared", "a").unwrap().is_some());
+    assert_err!(
+        trusted.delegated_targets("shared", "b"),
+        Error::SignatureThreshold { role, valid: 0, threshold: 1 } if role == "shared"
+    );
+    assert_err!(
+        trusted.update_delegated_targets(&repo.file("shared.json"), "shared", "b"),
+        Error::SignatureThreshold { role, valid: 0, threshold: 1 } if role == "shared"
     );
 }
 
@@ -302,47 +342,5 @@ fn delegated_targets_metadata_is_persisted_under_its_encoded_role_name() {
     assert_eq!(
         client.stored("team%2Fweb.json"),
         Some(repo.file("team%2Fweb.json"))
-    );
-}
-
-/// A role can be delegated to by several roles, with different keys. Its
-/// metadata, once trusted through one delegation, must also satisfy any
-/// other delegation it is used through: otherwise one delegation could lend
-/// its trust to another.
-#[test]
-fn a_role_must_satisfy_each_delegation_it_is_used_through() {
-    let mut repo = TestRepo::new();
-    repo.delegate("targets", Delegation::to("a").paths(&["a/*"]));
-    repo.delegate("targets", Delegation::to("b").paths(&["b/*"]));
-    repo.delegate("a", Delegation::to("shared").paths(&["a/*"]));
-    // "b" delegates to "shared" too, but to a key that does not sign it.
-    repo.delegate("b", Delegation::to("shared").paths(&["b/*"]));
-    repo.commit();
-
-    let mut trusted = repo.trusted_with_targets();
-    trusted
-        .update_delegated_targets(&repo.file("a.json"), "a", "targets")
-        .unwrap();
-    trusted
-        .update_delegated_targets(&repo.file("b.json"), "b", "targets")
-        .unwrap();
-    trusted
-        .update_delegated_targets(&repo.file("shared.json"), "shared", "a")
-        .unwrap();
-
-    assert!(trusted.delegated_targets("shared", "a").unwrap().is_some());
-    assert!(
-        trusted
-            .delegated_targets("unloaded", "a")
-            .unwrap()
-            .is_none()
-    );
-    assert_err!(
-        trusted.delegated_targets("shared", "b"),
-        Error::SignatureThreshold { role, .. } if role == "shared"
-    );
-    assert_err!(
-        trusted.update_delegated_targets(&repo.file("shared.json"), "shared", "b"),
-        Error::SignatureThreshold { role, .. } if role == "shared"
     );
 }

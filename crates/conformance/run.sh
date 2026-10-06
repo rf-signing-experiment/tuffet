@@ -6,9 +6,9 @@
 # For example, `crates/conformance/run.sh -k test_unsigned_metadata -rA` runs a single
 # test and shows the client's output. Set BACKEND=aws-lc-rs to test the
 # aws-lc-rs crypto backend. Requires git, python3 (3.10 or later) and faketime.
+# CI runs this script for both backends (.github/workflows/ci.yml).
 set -euo pipefail
 
-# Keep in sync with the tuf-conformance action in .github/workflows/ci.yml.
 TUF_CONFORMANCE_VERSION=v2.5.0
 BACKEND=${BACKEND:-rustcrypto}
 

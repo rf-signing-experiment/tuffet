@@ -385,10 +385,8 @@ fn reports_delegated_metadata_that_cannot_be_downloaded_or_validated() {
     );
 }
 
-/// A role delegated to by two roles with different keys must satisfy the
-/// delegation the search reaches it through, also when its metadata was
-/// verified and persisted through the other one (see
-/// `update_targets::a_role_must_satisfy_each_delegation_it_is_used_through`).
+/// 3.1.2.1: "Delegated target roles are authorized by the keys listed in the
+/// directly delegating target role".
 #[test]
 fn a_role_reached_through_another_delegation_is_verified_again() {
     let mut repo = TestRepo::new();
@@ -401,22 +399,25 @@ fn a_role_reached_through_another_delegation_is_verified_again() {
     repo.add_target("shared", "b/file", b"malicious");
     repo.commit();
 
+    // Two lookups by one updater: the first trusts "shared" through "a".
     let mut client = repo.client();
     client.refresh().unwrap();
     assert_eq!(client.find("a/file").as_deref(), Some("shared"));
     assert_err!(
         client.get_target_info("b/file"),
-        Error::SignatureThreshold { role, .. } if role == "shared"
+        Error::SignatureThreshold { role, valid: 0, threshold: 1 } if role == "shared"
     );
+    assert_eq!(client.find("a/file").as_deref(), Some("shared"));
 
     // A restarted client that reaches "shared" through "b" first, from the
-    // metadata it persisted.
+    // metadata it persisted after verifying it through "a".
     let mut restarted = client.restart();
     restarted.refresh().unwrap();
     assert_err!(
         restarted.get_target_info("b/file"),
-        Error::SignatureThreshold { role, .. } if role == "shared"
+        Error::SignatureThreshold { role, valid: 0, threshold: 1 } if role == "shared"
     );
+    assert_eq!(restarted.find("a/file").as_deref(), Some("shared"));
 }
 
 /// A role that two roles delegate to, with the same keys, is trusted

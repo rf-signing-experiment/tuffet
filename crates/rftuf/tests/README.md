@@ -79,7 +79,7 @@ tests that show each is detected:
 | Mix-and-match | Hashes and versions from timestamp and snapshot: `snapshot_must_match_the_hashes_listed_in_timestamp` (5.5.2), `snapshot_version_must_match_timestamp` (5.5.4), `targets_must_match_the_hashes_listed_in_snapshot` (5.6.2), `targets_version_must_match_snapshot` (5.6.4), and their delegated counterparts. |
 | Rollback | `new_root_version_must_be_exactly_one_more` (5.3.5), `rejects_a_timestamp_rollback` and `timestamp_must_not_roll_back_the_snapshot_version` (5.4.3), `snapshot_must_not_roll_back_targets_metadata` and `snapshot_must_keep_listing_targets_metadata` (5.5.5). |
 | Key compromise | Thresholds above 1: `root_rotation_example_of_the_specification` (6.1), `*_must_be_signed_by_a_threshold_of_*_keys`, `metadata::signatures::a_key_counts_once_even_under_several_key_ids`. |
-| Wrong software installation | Target hashes and lengths in `fetch_target`; `update_targets::a_role_must_satisfy_each_delegation_it_is_used_through`. |
+| Wrong software installation | Target hashes and lengths in `fetch_target`. A role that several roles delegate to is only trusted through the delegations whose keys sign it: `update_targets::a_role_must_satisfy_each_delegation_it_is_used_through`, `target_search::a_role_reached_through_another_delegation_is_verified_again`. |
 
 ## Conventions
 
