@@ -35,9 +35,9 @@ use crate::store::MetadataStore;
 use crate::transport::Transport;
 use crate::trusted::{TargetInfo, TargetSearch, TrustedMetadata};
 
-mod io;
+mod workflow;
 
-use io::Io;
+use workflow::Workflow;
 
 /// Limits and options for an [`Updater`].
 ///
@@ -87,7 +87,7 @@ impl Default for UpdaterConfig {
 ///
 /// `P` is the [POUF](crate::pouf) of the repository's metadata.
 pub struct Updater<T, S, P: Pouf = Json> {
-    io: Io<T, S>,
+    workflow: Workflow<T, S>,
     /// The latest trusted root, from which each refresh starts.
     root: Metadata<Root, P>,
     /// The trusted metadata, after a successful refresh.
@@ -128,7 +128,7 @@ impl<T: Transport, S: MetadataStore, P: Pouf> Updater<T, S, P> {
     pub async fn refresh_at(&mut self, reference_time: jiff::Timestamp) -> Result<()> {
         self.trusted = None;
         let mut trusted = TrustedMetadata::from_root(self.root.clone(), reference_time)?;
-        let result = self.io.refresh(&mut trusted).await;
+        let result = self.workflow.refresh(&mut trusted).await;
         self.root = trusted.root().clone();
         result?;
         self.trusted = Some(trusted);
@@ -144,10 +144,10 @@ impl<T: Transport, S: MetadataStore, P: Pouf> Updater<T, S, P> {
             self.refresh().await?;
         }
         let trusted = self.trusted.as_mut().expect("refreshed");
-        let mut search = TargetSearch::new(path, self.io.config.max_delegations);
+        let mut search = TargetSearch::new(path, self.workflow.config.max_delegations);
         while let Some(step) = search.next_step() {
             let targets = self
-                .io
+                .workflow
                 .load_targets(trusted, &step.role, &step.delegator)
                 .await?;
             if let Some(found) = search.visit(&step, targets.signed()) {
@@ -160,7 +160,7 @@ impl<T: Transport, S: MetadataStore, P: Pouf> Updater<T, S, P> {
     /// Downloads a target into memory and verifies it.
     pub async fn download_target(&self, target: &TargetInfo) -> Result<Vec<u8>> {
         let mut data = Vec::new();
-        self.io
+        self.workflow
             .download_target(&self.root, target, |chunk| {
                 data.extend_from_slice(chunk);
                 Ok(())
@@ -180,7 +180,7 @@ impl<T: Transport, S: MetadataStore, P: Pouf> Updater<T, S, P> {
             _ => Path::new("."),
         };
         let mut file = tempfile::NamedTempFile::new_in(dir)?;
-        self.io
+        self.workflow
             .download_target(&self.root, target, |chunk| file.write_all(chunk))
             .await?;
         file.as_file().sync_all()?;
@@ -200,15 +200,15 @@ impl<T: Transport, S: MetadataStore, P: Pouf> Updater<T, S, P> {
     }
 
     pub fn config(&self) -> &UpdaterConfig {
-        &self.io.config
+        &self.workflow.config
     }
 
     pub fn transport(&self) -> &T {
-        &self.io.transport
+        &self.workflow.transport
     }
 
     pub fn store(&self) -> &S {
-        &self.io.store
+        &self.workflow.store
     }
 }
 
@@ -252,14 +252,14 @@ impl<T: Transport, S: MetadataStore, P: Pouf> UpdaterBuilder<T, S, P> {
     /// that earlier updates persisted. Fails if there is neither an initial
     /// root nor a root in local storage.
     pub fn build(self) -> Result<Updater<T, S, P>> {
-        let io = Io {
+        let workflow = Workflow {
             transport: self.transport,
             store: self.store,
             config: self.config,
         };
-        let root = io.load_trusted_root(self.initial_root)?;
+        let root = workflow.load_trusted_root(self.initial_root)?;
         Ok(Updater {
-            io,
+            workflow,
             root,
             trusted: None,
         })

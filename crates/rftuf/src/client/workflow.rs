@@ -1,4 +1,5 @@
-//! The updater's I/O: fetching metadata and targets, and the local cache.
+//! The steps of the client workflow (section 5 of the specification), run
+//! against the transport and the metadata store.
 
 use std::io;
 
@@ -22,13 +23,13 @@ const ROLE_NAME: &AsciiSet = &NON_ALPHANUMERIC
     .remove(b'_')
     .remove(b'~');
 
-pub(super) struct Io<T, S> {
+pub(super) struct Workflow<T, S> {
     pub(super) transport: T,
     pub(super) store: S,
     pub(super) config: UpdaterConfig,
 }
 
-impl<T: Transport, S: MetadataStore> Io<T, S> {
+impl<T: Transport, S: MetadataStore> Workflow<T, S> {
     /// 5.2: loads the trusted root metadata: the initial root or, without
     /// one, the root in local storage, followed by the newer root versions
     /// that earlier updates kept in local storage. Each version must be

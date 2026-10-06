@@ -165,9 +165,6 @@ as rftuf's behavior:
 - When the new timestamp has the trusted version (5.4.3.1), the update goes
   on with the trusted metadata, as in python-tuf:
   `update_timestamp::a_timestamp_with_the_trusted_version_is_discarded_without_error`.
-- Metadata that cannot be downloaded or verified during a target search is
-  reported as an error rather than as a missing target (5.6.7):
-  `target_search::reports_delegated_metadata_that_cannot_be_downloaded_or_validated`.
 - The mirrors role and multiple repositories (TAP 4) are not supported.
 
 [snapbox]: https://docs.rs/snapbox

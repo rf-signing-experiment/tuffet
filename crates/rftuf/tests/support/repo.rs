@@ -5,12 +5,12 @@ use std::path::Path;
 use std::sync::Arc;
 
 use rftuf::TrustedMetadata;
+use rftuf::client::UpdaterConfig;
 use rftuf::crypto::{HashAlgorithm, PrivateKey, Signer};
 use rftuf::metadata::{
     DelegatedRole, Delegations, Hashes, MetaFile, Metadata, Role, RoleType, Root, Snapshot,
     TargetFile, Targets, Timestamp,
 };
-use rftuf::updater::UpdaterConfig;
 
 use super::keys::{key, key_id};
 use super::{Client, RecordingTransport, far_future, now};

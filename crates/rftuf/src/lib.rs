@@ -70,6 +70,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod client;
 pub mod crypto;
 mod error;
 pub mod metadata;
@@ -78,11 +79,10 @@ pub mod pouf;
 pub mod store;
 pub mod transport;
 pub mod trusted;
-pub mod updater;
 
+pub use client::{Updater, UpdaterConfig};
 pub use error::{Error, Result};
 pub use trusted::{TargetInfo, TrustedMetadata};
-pub use updater::{Updater, UpdaterConfig};
 
 /// This crate uses [`jiff::Timestamp`](jiff::Timestamp) for timestamps.
 pub use jiff;

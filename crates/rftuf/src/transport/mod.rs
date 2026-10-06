@@ -1,4 +1,4 @@
-//! Fetching files from a remote repository.
+//! Fetching files from a repository.
 //!
 //! This crate deliberately contains no HTTP client. Implement [`Transport`] to
 //! fetch files with the client of your choice (the `rftuf-http` crate provides
