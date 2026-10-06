@@ -2,7 +2,6 @@
 
 use std::sync::Arc;
 
-use chrono::{DateTime, Utc};
 use futures_executor::block_on;
 use rftuf::store::{MemoryStore, MetadataStore};
 use rftuf::{TargetInfo, TrustedMetadata, Updater, UpdaterConfig};
@@ -19,7 +18,7 @@ pub struct Client {
     pub store: Arc<MemoryStore>,
     /// The update start time (5.1) of [`refresh`](Self::refresh); [`now`] by
     /// default.
-    pub time: DateTime<Utc>,
+    pub time: jiff::Timestamp,
     transport: Arc<RecordingTransport>,
     config: UpdaterConfig,
 }

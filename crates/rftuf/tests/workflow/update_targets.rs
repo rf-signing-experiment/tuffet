@@ -7,7 +7,7 @@
 //! those their delegating role lists (3.1.2.1: "Delegated target roles are
 //! authorized by the keys listed in the directly delegating target role").
 
-use chrono::Duration;
+use jiff::SignedDuration;
 use rftuf::metadata::RoleType;
 use rftuf::{Error, UpdaterConfig};
 
@@ -272,7 +272,7 @@ fn delegated_targets_must_match_the_hashes_listed_in_snapshot() {
     let repo = delegating_to_a(TestRepo::builder().meta_hashes().build());
     let mut trusted = repo.trusted_with_targets();
     let mut other = repo.targets["a"].clone();
-    other.expires += Duration::days(1);
+    other.expires += SignedDuration::from_hours(24);
 
     assert_err!(
         trusted.update_delegated_targets(&repo.sign("a", &other), "a", "targets"),

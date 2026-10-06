@@ -4,7 +4,7 @@
 //! whether anything changed. It must be signed by the root's timestamp keys,
 //! must not roll back the trusted timestamp, and must not have expired.
 
-use chrono::Duration;
+use jiff::SignedDuration;
 use rftuf::metadata::{MetaFile, RoleType};
 use rftuf::trusted::TimestampUpdate;
 use rftuf::{Error, UpdaterConfig};
@@ -148,7 +148,7 @@ fn a_timestamp_with_the_trusted_version_is_discarded_without_error() {
     trusted
         .load_cached_timestamp(&repo.file("timestamp.json"))
         .unwrap();
-    repo.timestamp.expires += Duration::days(1);
+    repo.timestamp.expires += SignedDuration::from_hours(24);
     let same_version = repo.sign("timestamp", &repo.timestamp);
     assert_eq!(
         trusted.update_timestamp(&same_version).unwrap(),

@@ -4,14 +4,14 @@
 //! began: the `reference_time` of `TrustedMetadata::new`, and of
 //! `Updater::refresh_at` (`Updater::refresh` uses the current time).
 
-use chrono::Duration;
+use jiff::SignedDuration;
 use rftuf::Error;
 use rftuf::metadata::RoleType;
 
 use crate::support::{TestRepo, assert_err, now};
 
 /// Publishes metadata of a top-level role that expires at `expires`.
-fn publish_expiring(repo: &mut TestRepo, role: RoleType, expires: chrono::DateTime<chrono::Utc>) {
+fn publish_expiring(repo: &mut TestRepo, role: RoleType, expires: jiff::Timestamp) {
     match role {
         RoleType::Root => {
             repo.root.expires = expires;
@@ -38,17 +38,21 @@ fn publish_expiring(repo: &mut TestRepo, role: RoleType, expires: chrono::DateTi
 #[test]
 fn expiry_is_checked_against_the_update_start_time() {
     let mut repo = TestRepo::new();
-    publish_expiring(&mut repo, RoleType::Timestamp, now() + Duration::hours(1));
+    publish_expiring(
+        &mut repo,
+        RoleType::Timestamp,
+        now() + SignedDuration::from_hours(1),
+    );
     let mut client = repo.client();
 
-    client.time = now() + Duration::minutes(59);
+    client.time = now() + SignedDuration::from_mins(59);
     client.refresh().unwrap();
     assert_eq!(
         client.trusted().reference_time(),
-        now() + Duration::minutes(59)
+        now() + SignedDuration::from_mins(59)
     );
 
-    client.time = now() + Duration::minutes(61);
+    client.time = now() + SignedDuration::from_mins(61);
     assert_err!(client.refresh(), Error::Expired { role, .. } if role == "timestamp");
 }
 
@@ -72,7 +76,7 @@ fn metadata_that_expires_at_the_update_start_time_has_expired() {
             "{role}: {result:?}"
         );
 
-        client.time = now() - Duration::seconds(1);
+        client.time = now() - SignedDuration::from_secs(1);
         client.refresh().unwrap();
     }
 }

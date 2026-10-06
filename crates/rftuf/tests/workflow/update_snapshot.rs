@@ -5,7 +5,7 @@
 //! describes, be signed by the root's snapshot keys, not roll back any
 //! targets metadata the trusted snapshot lists, and not have expired.
 
-use chrono::Duration;
+use jiff::SignedDuration;
 use rftuf::metadata::{MetaFile, RoleType};
 use rftuf::pouf::Json;
 use rftuf::{Error, TrustedMetadata, UpdaterConfig};
@@ -81,7 +81,7 @@ fn snapshot_must_match_the_hashes_listed_in_timestamp() {
     let repo = TestRepo::builder().meta_hashes().build();
     let mut trusted = repo.trusted_with_timestamp();
     let mut other = repo.snapshot.clone();
-    other.expires += Duration::days(1);
+    other.expires += SignedDuration::from_hours(24);
 
     assert_err!(
         trusted.update_snapshot(&repo.sign("snapshot", &other)),
@@ -264,14 +264,14 @@ fn a_current_trusted_snapshot_is_not_downloaded_again() {
 #[test]
 fn an_expired_trusted_snapshot_is_not_used() {
     let mut repo = TestRepo::new();
-    repo.snapshot.expires = now() + Duration::hours(1);
+    repo.snapshot.expires = now() + SignedDuration::from_hours(1);
     repo.publish_snapshot();
     let mut client = repo.client();
     client.refresh().unwrap();
 
     // The timestamp is renewed, but still lists the same snapshot.
     repo.publish_timestamp();
-    let later = now() + Duration::hours(2);
+    let later = now() + SignedDuration::from_hours(2);
     let mut trusted = TrustedMetadata::<Json>::new(&repo.file("root.json"), later).unwrap();
     trusted
         .update_timestamp(&repo.file("timestamp.json"))

@@ -3,8 +3,6 @@
 use std::error::Error as StdError;
 use std::io;
 
-use chrono::{DateTime, Utc};
-
 use crate::crypto::CryptoError;
 use crate::transport::TransportError;
 
@@ -36,7 +34,7 @@ pub enum Error {
     #[error("{role} metadata expired at {expires}")]
     Expired {
         role: String,
-        expires: DateTime<Utc>,
+        expires: jiff::Timestamp,
     },
 
     /// Fewer than a threshold of authorized keys produced valid signatures.

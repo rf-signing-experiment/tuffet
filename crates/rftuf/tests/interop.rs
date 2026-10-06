@@ -5,7 +5,6 @@
 
 mod support;
 
-use chrono::{TimeZone, Utc};
 use futures_executor::block_on;
 use rftuf::metadata::{Metadata, Root, Snapshot, Targets, Timestamp};
 use rftuf::pouf::{Json, Pouf};
@@ -99,7 +98,7 @@ fn updates_from_the_repository_of_the_reference_implementation() {
         .build()
         .unwrap();
 
-    block_on(updater.refresh_at(Utc.with_ymd_and_hms(2025, 1, 1, 0, 0, 0).unwrap())).unwrap();
+    block_on(updater.refresh_at("2025-01-01T00:00:00Z".parse().unwrap())).unwrap();
     let file1 = block_on(updater.get_target_info("file1.txt"))
         .unwrap()
         .unwrap();
@@ -133,7 +132,7 @@ fn updates_from_the_repository_of_the_reference_implementation() {
     }
 
     // The repository's metadata expires in 2030.
-    let late = Utc.with_ymd_and_hms(2031, 1, 1, 0, 0, 0).unwrap();
+    let late = "2031-01-01T00:00:00Z".parse::<jiff::Timestamp>().unwrap();
     assert!(matches!(
         block_on(updater.refresh_at(late)),
         Err(Error::Expired { .. })

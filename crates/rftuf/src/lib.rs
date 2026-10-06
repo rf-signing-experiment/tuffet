@@ -83,3 +83,6 @@ pub mod updater;
 pub use error::{Error, Result};
 pub use trusted::{TargetInfo, TrustedMetadata};
 pub use updater::{Updater, UpdaterConfig};
+
+/// This crate uses [`jiff::Timestamp`](jiff::Timestamp) for timestamps.
+pub use jiff;

@@ -4,7 +4,6 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::Path;
 use std::sync::Arc;
 
-use chrono::{DateTime, Utc};
 use rftuf::TrustedMetadata;
 use rftuf::crypto::{HashAlgorithm, PrivateKey, Signer};
 use rftuf::metadata::{
@@ -28,7 +27,7 @@ pub struct RepoBuilder {
     name: String,
     consistent_snapshot: bool,
     keys: HashMap<RoleType, (usize, u64)>,
-    expires: HashMap<RoleType, DateTime<Utc>>,
+    expires: HashMap<RoleType, jiff::Timestamp>,
     meta_lengths: bool,
     meta_hashes: bool,
 }
@@ -56,7 +55,7 @@ impl RepoBuilder {
 
     /// Sets when version 1 of a top-level role's metadata expires (by
     /// default, [`far_future`]).
-    pub fn expires(mut self, role: RoleType, time: DateTime<Utc>) -> Self {
+    pub fn expires(mut self, role: RoleType, time: jiff::Timestamp) -> Self {
         self.expires.insert(role, time);
         self
     }

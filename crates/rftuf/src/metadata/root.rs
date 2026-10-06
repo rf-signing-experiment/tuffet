@@ -2,7 +2,6 @@
 
 use std::collections::BTreeMap;
 
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use super::{
@@ -25,7 +24,7 @@ pub struct Root {
     pub consistent_snapshot: Option<bool>,
     pub version: u64,
     #[serde(with = "datetime")]
-    pub expires: DateTime<Utc>,
+    pub expires: jiff::Timestamp,
     pub keys: BTreeMap<KeyId, Key>,
     pub roles: RootRoles,
     #[serde(flatten)]
@@ -87,7 +86,7 @@ impl RootRoles {
 impl Root {
     /// Creates version 1 of root metadata with consistent snapshots enabled
     /// and no keys. Every role has a threshold of 1.
-    pub fn new(expires: DateTime<Utc>) -> Self {
+    pub fn new(expires: jiff::Timestamp) -> Self {
         let no_keys = || RoleKeys::new(Vec::new(), 1);
         Root {
             type_field: TypeField::default(),
@@ -145,7 +144,7 @@ impl Role for Root {
         self.version
     }
 
-    fn expires(&self) -> DateTime<Utc> {
+    fn expires(&self) -> jiff::Timestamp {
         self.expires
     }
 

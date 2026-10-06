@@ -2,7 +2,6 @@
 
 use std::io;
 
-use chrono::Utc;
 use futures_util::StreamExt;
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 
@@ -49,7 +48,7 @@ impl<T: Transport, S: MetadataStore> Io<T, S> {
             None => stored.clone().ok_or(Error::NoTrustedRoot)?,
         };
         // Root updates do not check expiry, so the time does not matter.
-        let mut trusted = TrustedMetadata::<P>::new(&data, Utc::now())?;
+        let mut trusted = TrustedMetadata::<P>::new(&data, jiff::Timestamp::now())?;
         while let Some(version) = trusted.root().signed().version.checked_add(1)
             && let Some(next) = self.load(&format!("{version}.{root_name}"))?
         {

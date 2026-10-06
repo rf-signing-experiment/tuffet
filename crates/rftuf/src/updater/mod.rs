@@ -28,8 +28,6 @@ use std::io::Write;
 use std::marker::PhantomData;
 use std::path::Path;
 
-use chrono::{DateTime, Utc};
-
 use crate::error::{Error, Result};
 use crate::metadata::{Metadata, Root};
 use crate::pouf::{Json, Pouf};
@@ -114,7 +112,7 @@ impl<T: Transport, S: MetadataStore, P: Pouf> Updater<T, S, P> {
     /// Updates the trusted metadata from the repository, using the current
     /// time as the update start time.
     pub async fn refresh(&mut self) -> Result<()> {
-        self.refresh_at(Utc::now()).await
+        self.refresh_at(jiff::Timestamp::now()).await
     }
 
     /// Updates the trusted metadata from the repository, checking expiry
@@ -127,7 +125,7 @@ impl<T: Transport, S: MetadataStore, P: Pouf> Updater<T, S, P> {
     /// On error the updater trusts no metadata other than root until the
     /// next successful refresh. New root versions accepted before the error
     /// remain trusted.
-    pub async fn refresh_at(&mut self, reference_time: DateTime<Utc>) -> Result<()> {
+    pub async fn refresh_at(&mut self, reference_time: jiff::Timestamp) -> Result<()> {
         self.trusted = None;
         let mut trusted = TrustedMetadata::from_root(self.root.clone(), reference_time)?;
         let result = self.io.refresh(&mut trusted).await;

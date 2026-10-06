@@ -15,7 +15,6 @@ use std::collections::{BTreeMap, HashSet};
 use std::fmt;
 use std::marker::PhantomData;
 
-use chrono::{DateTime, Utc};
 use serde::de::{DeserializeOwned, Error as _};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -95,11 +94,11 @@ pub trait Role: Serialize + DeserializeOwned + Clone + fmt::Debug {
 
     fn version(&self) -> u64;
 
-    fn expires(&self) -> DateTime<Utc>;
+    fn expires(&self) -> jiff::Timestamp;
 
     /// Whether the metadata is expired at `time`. Metadata is only valid
     /// while its expiration time is *later* than the reference time.
-    fn is_expired(&self, time: DateTime<Utc>) -> bool {
+    fn is_expired(&self, time: jiff::Timestamp) -> bool {
         self.expires() <= time
     }
 

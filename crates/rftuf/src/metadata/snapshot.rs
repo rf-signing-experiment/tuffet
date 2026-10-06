@@ -3,7 +3,6 @@
 
 use std::collections::BTreeMap;
 
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use super::{
@@ -23,7 +22,7 @@ pub struct Snapshot {
     pub spec_version: String,
     pub version: u64,
     #[serde(with = "datetime")]
-    pub expires: DateTime<Utc>,
+    pub expires: jiff::Timestamp,
     /// Targets metadata files, keyed by file name (e.g. `targets.json`).
     pub meta: BTreeMap<String, MetaFile>,
     #[serde(flatten)]
@@ -44,7 +43,7 @@ pub struct MetaFile {
 
 impl Snapshot {
     /// Creates version 1 of snapshot metadata, listing no files.
-    pub fn new(expires: DateTime<Utc>) -> Self {
+    pub fn new(expires: jiff::Timestamp) -> Self {
         Snapshot {
             type_field: TypeField::default(),
             spec_version: SPEC_VERSION.to_owned(),
@@ -104,7 +103,7 @@ impl Role for Snapshot {
         self.version
     }
 
-    fn expires(&self) -> DateTime<Utc> {
+    fn expires(&self) -> jiff::Timestamp {
         self.expires
     }
 

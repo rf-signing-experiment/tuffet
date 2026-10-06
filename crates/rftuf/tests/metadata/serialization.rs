@@ -13,7 +13,6 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use chrono::{DateTime, TimeZone, Utc};
 use rftuf::crypto::{HashAlgorithm, PrivateKey, Signer, public_key_from_pem};
 use rftuf::metadata::{
     DelegatedRole, Delegations, Key, MetaFile, Metadata, Role, RoleType, Root, SignatureScheme,
@@ -25,8 +24,8 @@ use snapbox::{assert_data_eq, file};
 use crate::support::data;
 use crate::support::keys::{key, key_id};
 
-fn expires() -> DateTime<Utc> {
-    Utc.with_ymd_and_hms(2030, 1, 1, 0, 0, 0).unwrap()
+fn expires() -> jiff::Timestamp {
+    "2030-01-01T00:00:00Z".parse().unwrap()
 }
 
 /// Signs `payload` with `signers` and encodes it, as the text of a snapshot

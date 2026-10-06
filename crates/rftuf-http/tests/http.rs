@@ -7,7 +7,6 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use bytes::Bytes;
-use chrono::{TimeZone, Utc};
 use futures_util::TryStreamExt;
 use http_body_util::combinators::BoxBody;
 use http_body_util::{BodyExt, Full, StreamBody};
@@ -164,7 +163,7 @@ async fn updates_from_the_reference_implementations_repository_over_http() {
         .build()
         .unwrap();
     updater
-        .refresh_at(Utc.with_ymd_and_hms(2025, 1, 1, 0, 0, 0).unwrap())
+        .refresh_at("2025-01-01T00:00:00Z".parse().unwrap())
         .await
         .unwrap();
 

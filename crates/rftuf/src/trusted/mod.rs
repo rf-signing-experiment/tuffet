@@ -27,8 +27,6 @@
 
 use std::collections::HashMap;
 
-use chrono::{DateTime, Utc};
-
 use crate::error::{Error, Result};
 use crate::metadata::{MetaFile, Metadata, Role, RoleType, Root, Snapshot, Targets, Timestamp};
 use crate::pouf::{Json, Pouf};
@@ -43,7 +41,7 @@ pub use search::{SearchStep, TargetInfo, TargetSearch};
 /// "update start time").
 #[derive(Debug, Clone)]
 pub struct TrustedMetadata<P: Pouf = Json> {
-    reference_time: DateTime<Utc>,
+    reference_time: jiff::Timestamp,
     root: Metadata<Root, P>,
     timestamp: Option<Metadata<Timestamp, P>>,
     snapshot: Option<Metadata<Snapshot, P>>,
@@ -67,12 +65,12 @@ impl<P: Pouf> TrustedMetadata<P> {
     ///
     /// The root must be signed by a threshold of its own root keys. Its
     /// expiry is not checked yet, because a newer root may replace it.
-    pub fn new(root: &[u8], reference_time: DateTime<Utc>) -> Result<Self> {
+    pub fn new(root: &[u8], reference_time: jiff::Timestamp) -> Result<Self> {
         Self::from_root(Metadata::from_bytes(root)?, reference_time)
     }
 
     /// Like [`new`](Self::new), for root metadata that is already decoded.
-    pub fn from_root(root: Metadata<Root, P>, reference_time: DateTime<Utc>) -> Result<Self> {
+    pub fn from_root(root: Metadata<Root, P>, reference_time: jiff::Timestamp) -> Result<Self> {
         root.signed().verify_role(&root)?;
         Ok(TrustedMetadata {
             reference_time,
@@ -84,7 +82,7 @@ impl<P: Pouf> TrustedMetadata<P> {
     }
 
     /// The fixed time against which expiry is checked.
-    pub fn reference_time(&self) -> DateTime<Utc> {
+    pub fn reference_time(&self) -> jiff::Timestamp {
         self.reference_time
     }
 

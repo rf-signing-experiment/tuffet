@@ -2,7 +2,6 @@
 //! string is "YYYY-MM-DDTHH:MM:SSZ". Time is always in UTC, and the "Z" time
 //! zone designator is attached to indicate a zero UTC offset."
 
-use chrono::{TimeZone, Utc};
 use rftuf::Error;
 use rftuf::metadata::{Metadata, Timestamp};
 use serde_json::{Value, json};
@@ -22,7 +21,7 @@ fn expires_is_a_utc_date_time() {
     let timestamp = timestamp_expiring(json!("1985-10-21T01:21:00Z")).unwrap();
     assert_eq!(
         timestamp.signed().expires,
-        Utc.with_ymd_and_hms(1985, 10, 21, 1, 21, 0).unwrap()
+        "1985-10-21T01:21:00Z".parse::<jiff::Timestamp>().unwrap()
     );
     let encoded: Value = serde_json::from_slice(&timestamp.to_bytes().unwrap()).unwrap();
     assert_eq!(encoded["signed"]["expires"], "1985-10-21T01:21:00Z");

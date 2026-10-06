@@ -2,7 +2,6 @@
 
 use std::collections::{BTreeMap, HashSet};
 
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use super::{
@@ -23,7 +22,7 @@ pub struct Targets {
     pub spec_version: String,
     pub version: u64,
     #[serde(with = "datetime")]
-    pub expires: DateTime<Utc>,
+    pub expires: jiff::Timestamp,
     /// Target files, keyed by target path.
     pub targets: BTreeMap<String, TargetFile>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -80,7 +79,7 @@ pub struct DelegatedRole {
 
 impl Targets {
     /// Creates version 1 of targets metadata, listing no targets.
-    pub fn new(expires: DateTime<Utc>) -> Self {
+    pub fn new(expires: jiff::Timestamp) -> Self {
         Targets {
             type_field: TypeField::default(),
             spec_version: SPEC_VERSION.to_owned(),
@@ -237,7 +236,7 @@ impl Role for Targets {
         self.version
     }
 
-    fn expires(&self) -> DateTime<Utc> {
+    fn expires(&self) -> jiff::Timestamp {
         self.expires
     }
 

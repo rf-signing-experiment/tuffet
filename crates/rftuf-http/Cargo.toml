@@ -27,7 +27,6 @@ url = "2"
 
 [dev-dependencies]
 bytes.workspace = true
-chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
 http-body-util = "0.1"
 hyper = { version = "1", features = ["http1", "server"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
