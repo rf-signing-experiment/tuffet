@@ -1,10 +1,12 @@
 //! The client-under-test for the [tuf-conformance] test suite.
 //!
 //! Implements the suite's [CLI protocol] on top of [`rftuf::Updater`]. To run
-//! the suite, see `conformance/run.sh`.
+//! the suite, see `crates/conformance/run.sh`.
 //!
 //! [tuf-conformance]: https://github.com/theupdateframework/tuf-conformance
 //! [CLI protocol]: https://github.com/theupdateframework/tuf-conformance/blob/main/CLIENT-CLI.md
+
+#![forbid(unsafe_code)]
 
 use std::error::Error;
 use std::path::{Path, PathBuf};

@@ -25,6 +25,8 @@
 //! [`HttpTransport::with_client`] to configure timeouts, proxies or trusted
 //! certificates.
 
+#![forbid(unsafe_code)]
+
 use futures_util::{StreamExt, TryStreamExt, stream};
 use reqwest::StatusCode;
 use rftuf::transport::{ByteStream, Transport, TransportError};

@@ -68,6 +68,8 @@
 //! count distinct keys, compared by key material, and each role's signatures
 //! are only checked against the keys its delegating role lists.
 
+#![forbid(unsafe_code)]
+
 pub mod crypto;
 mod error;
 pub mod metadata;

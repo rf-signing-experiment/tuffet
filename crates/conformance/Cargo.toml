@@ -6,6 +6,9 @@ edition.workspace = true
 rust-version.workspace = true
 publish = false
 
+[lints]
+workspace = true
+
 [features]
 default = ["rustcrypto"]
 # Cryptography backend of rftuf.
@@ -18,5 +21,5 @@ env_logger = "0.11"
 log = "0.4"
 percent-encoding = "2"
 rftuf.workspace = true
-rftuf-http = { path = "../rftuf-http", default-features = false, features = ["rustls"] }
+rftuf-http.workspace = true
 tokio = { version = "1", features = ["macros", "rt"] }

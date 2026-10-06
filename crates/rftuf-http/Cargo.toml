@@ -4,13 +4,18 @@ version = "0.1.0"
 description = "An HTTP transport for the rftuf TUF client, built on reqwest"
 edition.workspace = true
 rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
 
 [features]
 default = ["rustls", "rustcrypto"]
 # TLS implementation used by the default client.
 rustls = ["reqwest/rustls"]
 native-tls = ["reqwest/native-tls"]
-# Cryptography backend of rftuf. `aws-lc-rs` uses the same library as `rustls`.
+# Cryptography backend of rftuf.
 rustcrypto = ["rftuf/rustcrypto"]
 aws-lc-rs = ["rftuf/aws-lc-rs"]
 
