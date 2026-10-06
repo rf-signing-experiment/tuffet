@@ -42,6 +42,13 @@ files. It is also the API for creating metadata (see
 
 ## Design notes
 
+- **Trust anchor.** The root passed to `initial_root`, normally shipped with
+  the application, is the trust anchor. The updater keeps every root version
+  it downloads in local storage, and checks them again as a chain from the
+  initial root when it starts, so a root in local storage that does not
+  descend from it is not trusted, and shipping a new root recovers clients
+  from a compromise of root keys. Without an initial root, the stored
+  `root.json` is trusted as it is.
 - **POUF.** The wire format is a `pouf::Pouf` type parameter that defaults to
   `pouf::Json`: JSON signed over OLPC canonical JSON, compatible with
   python-tuf. Signatures are checked against the canonical form of the

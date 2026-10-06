@@ -31,7 +31,7 @@ use std::path::Path;
 use chrono::{DateTime, Utc};
 
 use crate::error::{Error, Result};
-use crate::metadata::{Metadata, RoleType, Root};
+use crate::metadata::{Metadata, Root};
 use crate::pouf::{Json, Pouf};
 use crate::store::MetadataStore;
 use crate::transport::Transport;
@@ -225,8 +225,9 @@ pub struct UpdaterBuilder<T, S, P = Json> {
 
 impl<T: Transport, S: MetadataStore, P: Pouf> UpdaterBuilder<T, S, P> {
     /// Root metadata to trust initially, normally shipped with the
-    /// application. It is used unless local storage holds a newer root
-    /// (persisted by earlier updates).
+    /// application. It is the trust anchor: root metadata in local storage is
+    /// only trusted if it descends from it. Without an initial root, the root
+    /// in local storage is trusted as it is.
     pub fn initial_root(mut self, root: impl Into<Vec<u8>>) -> Self {
         self.initial_root = Some(root.into());
         self
@@ -248,52 +249,21 @@ impl<T: Transport, S: MetadataStore, P: Pouf> UpdaterBuilder<T, S, P> {
         }
     }
 
-    /// Creates the updater, starting from the newer of the initial root and
-    /// the root in local storage. Fails if neither is available.
+    /// Creates the updater. It starts from the initial root or, without one,
+    /// from the root in local storage, followed by the newer root versions
+    /// that earlier updates persisted. Fails if there is neither an initial
+    /// root nor a root in local storage.
     pub fn build(self) -> Result<Updater<T, S, P>> {
         let io = Io {
             transport: self.transport,
             store: self.store,
             config: self.config,
         };
-        let root_name = P::file_name(RoleType::Root.as_str());
-        let initial = self
-            .initial_root
-            .map(|data| self_signed_root::<P>(&data).map(|root| (root, data)));
-        let stored = io
-            .load(&root_name)?
-            .map(|data| self_signed_root::<P>(&data));
-
-        let root = match (stored, initial) {
-            (None, None) => return Err(Error::NoTrustedRoot),
-            (Some(stored), None) => stored?,
-            (stored, Some(initial)) => {
-                let (initial, data) = initial?;
-                match stored {
-                    Some(Ok(stored)) if stored.signed().version >= initial.signed().version => {
-                        stored
-                    }
-                    stored => {
-                        if let Some(Err(error)) = stored {
-                            log::warn!("ignoring invalid {root_name} in local storage: {error}");
-                        }
-                        io.persist(&root_name, &data)?;
-                        initial
-                    }
-                }
-            }
-        };
+        let root = io.load_trusted_root(self.initial_root)?;
         Ok(Updater {
             io,
             root,
             trusted: None,
         })
     }
-}
-
-/// Decodes root metadata and checks that it is signed by its own keys.
-fn self_signed_root<P: Pouf>(data: &[u8]) -> Result<Metadata<Root, P>> {
-    let root = Metadata::<Root, P>::from_bytes(data)?;
-    root.signed().verify_role(&root)?;
-    Ok(root)
 }

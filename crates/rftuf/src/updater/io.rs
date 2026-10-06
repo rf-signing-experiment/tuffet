@@ -2,6 +2,7 @@
 
 use std::io;
 
+use chrono::Utc;
 use futures_util::StreamExt;
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 
@@ -29,6 +30,41 @@ pub(super) struct Io<T, S> {
 }
 
 impl<T: Transport, S: MetadataStore> Io<T, S> {
+    /// 5.2: loads the trusted root metadata: the initial root or, without
+    /// one, the root in local storage, followed by the newer root versions
+    /// that earlier updates kept in local storage. Each version must be
+    /// signed by the root keys of the one before it, so roots in local
+    /// storage are only trusted if they descend from the initial root.
+    ///
+    /// The result is persisted as the root to start from without an initial
+    /// root.
+    pub(super) fn load_trusted_root<P: Pouf>(
+        &self,
+        initial_root: Option<Vec<u8>>,
+    ) -> Result<Metadata<Root, P>> {
+        let root_name = P::file_name(RoleType::Root.as_str());
+        let stored = self.load(&root_name)?;
+        let mut data = match initial_root {
+            Some(data) => data,
+            None => stored.clone().ok_or(Error::NoTrustedRoot)?,
+        };
+        // Root updates do not check expiry, so the time does not matter.
+        let mut trusted = TrustedMetadata::<P>::new(&data, Utc::now())?;
+        while let Some(version) = trusted.root().signed().version.checked_add(1)
+            && let Some(next) = self.load(&format!("{version}.{root_name}"))?
+        {
+            if let Err(error) = trusted.update_root(&next) {
+                log::warn!("ignoring version {version} of {root_name} in local storage: {error}");
+                break;
+            }
+            data = next;
+        }
+        if stored.as_ref() != Some(&data) {
+            self.persist(&root_name, &data)?;
+        }
+        Ok(trusted.root().clone())
+    }
+
     /// Runs the workflow up to and including the top-level targets metadata.
     pub(super) async fn refresh<P: Pouf>(&self, trusted: &mut TrustedMetadata<P>) -> Result<()> {
         self.update_root(trusted).await?;
@@ -39,10 +75,10 @@ impl<T: Transport, S: MetadataStore> Io<T, S> {
         Ok(())
     }
 
-    /// 5.3: walks through all newer versions of root metadata.
+    /// 5.3: downloads all newer versions of root metadata, and keeps each one
+    /// for [`load_trusted_root`](Self::load_trusted_root).
     async fn update_root<P: Pouf>(&self, trusted: &mut TrustedMetadata<P>) -> Result<()> {
         let root_name = P::file_name(RoleType::Root.as_str());
-        let initial_roles = trusted.root().signed().roles.clone();
         for _ in 0..self.config.max_root_rotations {
             let Some(next_version) = trusted.root().signed().version.checked_add(1) else {
                 break;
@@ -55,18 +91,20 @@ impl<T: Transport, S: MetadataStore> Io<T, S> {
                 Err(Error::Transport(TransportError::NotFound(_))) => break,
                 result => result?,
             };
-            trusted.update_root(&data)?;
-            self.persist(&root_name, &data)?;
-        }
+            let old_roles = trusted.root().signed().roles.clone();
+            let roles = &trusted.update_root(&data)?.signed().roles;
 
-        // 5.3.11: after timestamp or snapshot keys are rotated, forget the
-        // cached metadata of those roles, so that versions inflated by an
-        // attacker who held the old keys cannot block future updates
-        // (recovery from a fast-forward attack).
-        let roles = &trusted.root().signed().roles;
-        if roles.timestamp != initial_roles.timestamp || roles.snapshot != initial_roles.snapshot {
-            self.remove(&P::file_name(RoleType::Timestamp.as_str()))?;
-            self.remove(&P::file_name(RoleType::Snapshot.as_str()))?;
+            // 5.3.11: after timestamp or snapshot keys are rotated, forget the
+            // cached metadata of those roles, so that versions inflated by an
+            // attacker who held the old keys cannot block future updates
+            // (recovery from a fast-forward attack). Do it before persisting
+            // the new root, from which the next update starts.
+            if roles.timestamp != old_roles.timestamp || roles.snapshot != old_roles.snapshot {
+                self.remove(&P::file_name(RoleType::Timestamp.as_str()))?;
+                self.remove(&P::file_name(RoleType::Snapshot.as_str()))?;
+            }
+            self.persist(&name, &data)?;
+            self.persist(&root_name, &data)?;
         }
         Ok(())
     }

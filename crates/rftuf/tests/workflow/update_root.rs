@@ -350,6 +350,47 @@ fn rotating_timestamp_or_snapshot_keys_deletes_their_trusted_metadata() {
     }
 }
 
+/// 5.3.11 also holds when the update fails after a rotation: the next update
+/// starts from the rotated root, and would not see the rotation again.
+#[test]
+fn rotating_timestamp_keys_deletes_their_trusted_metadata_even_if_the_update_fails() {
+    let mut repo = TestRepo::new();
+    let mut client = repo.client();
+    client.refresh().unwrap();
+
+    repo.rotate_key(RoleType::Timestamp);
+    repo.publish_root();
+    repo.write("3.root.json", b"not root metadata".to_vec());
+    assert_err!(client.refresh(), Error::Decode(_));
+
+    assert_eq!(client.stored("root.json"), Some(repo.file("2.root.json")));
+    assert_eq!(client.stored("timestamp.json"), None);
+    assert_eq!(client.stored("snapshot.json"), None);
+}
+
+/// 5.3.11 applies to the root versions an update downloads, not to those a
+/// restarted client checks again from local storage: the timestamp metadata
+/// trusted since the rotation remains the baseline for rollback checks.
+#[test]
+fn persisted_root_versions_do_not_delete_the_trusted_timestamp_again() {
+    let mut repo = TestRepo::new();
+    let mut client = repo.client();
+    repo.rotate_key(RoleType::Timestamp);
+    repo.publish_root();
+    repo.timestamp.version = 9;
+    repo.publish_timestamp();
+    client.refresh().unwrap();
+    assert_eq!(client.trusted().timestamp().unwrap().signed().version, 10);
+
+    repo.timestamp.version = 1;
+    repo.publish_timestamp();
+    let mut restarted = client.restart_with(repo.initial_root());
+    assert_err!(
+        restarted.refresh(),
+        Error::Rollback { role, trusted: 10, new: 2 } if role == "timestamp"
+    );
+}
+
 /// 5.3.11: when other keys are rotated, the trusted timestamp and snapshot
 /// metadata are kept, and what has not changed is not downloaded again.
 #[test]

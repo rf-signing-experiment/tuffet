@@ -210,11 +210,7 @@ impl<P: Pouf> TrustedMetadata<P> {
                 "timestamp cannot be updated once snapshot is loaded",
             ));
         }
-        check_expiry(
-            RoleType::Root.as_str(),
-            self.root.signed(),
-            self.reference_time,
-        )?;
+        self.check_expiry(RoleType::Root.as_str(), &self.root)?;
         let new_timestamp = Metadata::<Timestamp, P>::from_bytes(data)?;
         self.root.signed().verify_role(&new_timestamp)?;
 
@@ -230,11 +226,7 @@ impl<P: Pouf> TrustedMetadata<P> {
             }
             if new_version == trusted_version {
                 // Keep the trusted copy, but only if it is still valid.
-                check_expiry(
-                    RoleType::Timestamp.as_str(),
-                    trusted.signed(),
-                    self.reference_time,
-                )?;
+                self.check_expiry(RoleType::Timestamp.as_str(), trusted)?;
                 return Ok(TimestampUpdate::Unchanged);
             }
             let trusted_snapshot = Self::snapshot_meta_of(trusted).version;
@@ -247,11 +239,7 @@ impl<P: Pouf> TrustedMetadata<P> {
                 ));
             }
         }
-        check_expiry(
-            RoleType::Timestamp.as_str(),
-            new_timestamp.signed(),
-            self.reference_time,
-        )?;
+        self.check_expiry(RoleType::Timestamp.as_str(), &new_timestamp)?;
         self.timestamp = Some(new_timestamp);
         Ok(TimestampUpdate::Updated)
     }
@@ -308,11 +296,7 @@ impl<P: Pouf> TrustedMetadata<P> {
                 }
             }
         }
-        check_expiry(
-            RoleType::Snapshot.as_str(),
-            new_snapshot.signed(),
-            self.reference_time,
-        )?;
+        self.check_expiry(RoleType::Snapshot.as_str(), &new_snapshot)?;
         self.snapshot = Some(new_snapshot);
         Ok(())
     }
@@ -353,7 +337,7 @@ impl<P: Pouf> TrustedMetadata<P> {
         let new_targets = Metadata::<Targets, P>::from_bytes(data)?;
         self.verify_delegation(role, delegator, &new_targets)?;
         check_version(role, expected_version, new_targets.signed().version)?;
-        check_expiry(role, new_targets.signed(), self.reference_time)?;
+        self.check_expiry(role, &new_targets)?;
 
         self.targets.insert(role.to_owned(), new_targets);
         Ok(&self.targets[role])
@@ -381,20 +365,12 @@ impl<P: Pouf> TrustedMetadata<P> {
 
     /// The timestamp metadata, provided it and the root are unexpired.
     fn final_timestamp(&self) -> Result<&Metadata<Timestamp, P>> {
-        check_expiry(
-            RoleType::Root.as_str(),
-            self.root.signed(),
-            self.reference_time,
-        )?;
+        self.check_expiry(RoleType::Root.as_str(), &self.root)?;
         let timestamp = self
             .timestamp
             .as_ref()
             .ok_or(Error::InvalidState("timestamp is not loaded"))?;
-        check_expiry(
-            RoleType::Timestamp.as_str(),
-            timestamp.signed(),
-            self.reference_time,
-        )?;
+        self.check_expiry(RoleType::Timestamp.as_str(), timestamp)?;
         Ok(timestamp)
     }
 
@@ -406,17 +382,24 @@ impl<P: Pouf> TrustedMetadata<P> {
             .snapshot
             .as_ref()
             .ok_or(Error::InvalidState("snapshot is not loaded"))?;
-        check_expiry(
-            RoleType::Snapshot.as_str(),
-            snapshot.signed(),
-            self.reference_time,
-        )?;
+        self.check_expiry(RoleType::Snapshot.as_str(), snapshot)?;
         check_version(
             RoleType::Snapshot.as_str(),
             expected_version,
             snapshot.signed().version,
         )?;
         Ok(snapshot)
+    }
+
+    /// Fails if `metadata` of `role` has expired at the reference time.
+    fn check_expiry<R: Role>(&self, role: &str, metadata: &Metadata<R, P>) -> Result<()> {
+        if metadata.signed().is_expired(self.reference_time) {
+            return Err(Error::Expired {
+                role: role.to_owned(),
+                expires: metadata.signed().expires(),
+            });
+        }
+        Ok(())
     }
 
     fn snapshot_meta_of(timestamp: &Metadata<Timestamp, P>) -> &MetaFile {
@@ -426,16 +409,6 @@ impl<P: Pouf> TrustedMetadata<P> {
             .get(&P::file_name(RoleType::Snapshot.as_str()))
             .expect("validated timestamp metadata lists snapshot metadata")
     }
-}
-
-fn check_expiry<R: Role>(role: &str, metadata: &R, reference_time: DateTime<Utc>) -> Result<()> {
-    if metadata.is_expired(reference_time) {
-        return Err(Error::Expired {
-            role: role.to_owned(),
-            expires: metadata.expires(),
-        });
-    }
-    Ok(())
 }
 
 fn check_version(role: &str, expected: u64, actual: u64) -> Result<()> {

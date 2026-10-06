@@ -84,15 +84,33 @@ fn delegated_role_names_must_be_unique() {
 
 /// Delegated role names must name a role that has its own metadata file
 /// (3.1.2.1), so rftuf, like the reference implementation, rejects empty
-/// names and the names of the top-level roles.
+/// names and the names of the top-level roles. Clients store a role's
+/// metadata under its name, so names that would be stored like top-level
+/// metadata are rejected too: names that differ from those only in case (on
+/// a case-insensitive filesystem, `ROOT.json` would overwrite the trusted
+/// `root.json`), and names of root versions (`2.root.json`).
 #[test]
 fn delegated_role_names_must_not_be_empty_or_top_level_role_names() {
-    for name in ["", "root", "timestamp", "snapshot", "targets"] {
+    for name in [
+        "",
+        "root",
+        "timestamp",
+        "snapshot",
+        "targets",
+        "ROOT",
+        "Snapshot",
+        "2.root",
+        "10.ROOT",
+    ] {
         let payload = with_delegated_role(|role| role["name"] = json!(name));
         assert!(
             invalid_reason::<Targets>(payload).contains("invalid delegated role name"),
             "{name:?}"
         );
+    }
+    for name in ["roots", "2.roots", "v2.root", ".root", "root.2"] {
+        let payload = with_delegated_role(|role| role["name"] = json!(name));
+        decode::<Targets>(payload).unwrap_or_else(|error| panic!("{name:?}: {error}"));
     }
 }
 

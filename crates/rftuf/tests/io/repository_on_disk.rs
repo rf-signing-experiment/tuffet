@@ -46,6 +46,7 @@ fn updates_from_a_repository_on_disk() {
     assert_eq!(
         persisted,
         [
+            "2.root.json",
             "root.json",
             "snapshot.json",
             "targets.json",

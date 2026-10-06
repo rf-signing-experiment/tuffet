@@ -46,10 +46,23 @@ impl Client {
     /// The same client after a restart: a new `Updater` that starts from the
     /// local storage alone.
     pub fn restart(&self) -> Self {
-        let updater = Updater::builder(self.transport.clone(), self.store.clone())
-            .config(self.config.clone())
-            .build()
-            .unwrap();
+        self.restart_from(None)
+    }
+
+    /// The same client after a restart of an application that ships
+    /// `initial_root`: a new `Updater` that starts from it and the local
+    /// storage.
+    pub fn restart_with(&self, initial_root: Vec<u8>) -> Self {
+        self.restart_from(Some(initial_root))
+    }
+
+    fn restart_from(&self, initial_root: Option<Vec<u8>>) -> Self {
+        let mut builder = Updater::builder(self.transport.clone(), self.store.clone())
+            .config(self.config.clone());
+        if let Some(root) = initial_root {
+            builder = builder.initial_root(root);
+        }
+        let updater = builder.build().unwrap();
         Client {
             updater,
             store: self.store.clone(),

@@ -23,9 +23,12 @@
 //! downloaded. The `rustls` (default) and `native-tls` features select the
 //! TLS implementation of the default client; pass your own client to
 //! [`HttpTransport::with_client`] to configure timeouts, proxies or trusted
-//! certificates.
+//! certificates. Give it timeouts: without them, a server that stops sending
+//! data stalls the update forever.
 
 #![forbid(unsafe_code)]
+
+use std::time::Duration;
 
 use futures_util::{StreamExt, TryStreamExt, stream};
 use reqwest::StatusCode;
@@ -44,9 +47,19 @@ pub struct HttpTransport {
 
 impl HttpTransport {
     /// Fetches metadata from below `metadata_url` and targets from below
-    /// `targets_url`, using a default client.
+    /// `targets_url`, using a default client that gives up when a server
+    /// takes 30 seconds to accept a connection or to send more data.
+    ///
+    /// Panics if the TLS backend cannot be initialized, like
+    /// [`reqwest::Client::new`].
     pub fn new(metadata_url: Url, targets_url: Url) -> Self {
-        Self::with_client(reqwest::Client::new(), metadata_url, targets_url)
+        let timeout = Duration::from_secs(30);
+        let client = reqwest::Client::builder()
+            .connect_timeout(timeout)
+            .read_timeout(timeout)
+            .build()
+            .expect("failed to initialize the HTTP client");
+        Self::with_client(client, metadata_url, targets_url)
     }
 
     /// Like [`new`](Self::new), using `client` for all requests.

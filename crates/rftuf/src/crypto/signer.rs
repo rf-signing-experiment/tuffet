@@ -56,11 +56,7 @@ impl PrivateKey {
             check_rsa_key_size(backend::rsa_modulus_bits(&public_key)?)
                 .map_err(CryptoError::InvalidPrivateKey)?;
         }
-        let public = Key::new(
-            algorithm.key_type(),
-            algorithm.scheme(),
-            algorithm.encode_public_key(&public_key),
-        );
+        let public = algorithm.key(&public_key);
         Ok(PrivateKey { inner, public })
     }
 }

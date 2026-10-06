@@ -50,7 +50,7 @@ use std::borrow::Cow;
 use std::error::Error as StdError;
 use std::ops::RangeInclusive;
 
-use crate::metadata::{Key, KeyType, SignatureScheme};
+use crate::metadata::{Key, SignatureScheme};
 
 mod signer;
 
@@ -167,7 +167,7 @@ impl Hasher {
 /// [TAP 21]: https://github.com/theupdateframework/taps/blob/master/tap21.md
 pub fn verify_signature(key: &Key, message: &[u8], signature: &[u8]) -> Result<(), CryptoError> {
     let algorithm = Algorithm::from_scheme(&key.scheme)
-        .filter(|algorithm| algorithm.key_type() == key.keytype)
+        .filter(|_| key.scheme.key_type().as_ref() == Some(&key.keytype))
         .ok_or_else(|| CryptoError::UnsupportedScheme {
             keytype: key.keytype.as_str().to_owned(),
             scheme: key.scheme.as_str().to_owned(),
@@ -221,11 +221,7 @@ pub fn public_key_from_spki(scheme: &SignatureScheme, der: &[u8]) -> Result<Key,
         check_rsa_key_size(backend::rsa_modulus_bits(public_key)?)
             .map_err(CryptoError::InvalidPublicKey)?;
     }
-    Ok(Key::new(
-        algorithm.key_type(),
-        algorithm.scheme(),
-        algorithm.encode_public_key(public_key),
-    ))
+    Ok(algorithm.key(public_key))
 }
 
 /// Like [`public_key_from_spki`], for a PEM-encoded key
@@ -241,12 +237,11 @@ const ED25519_SPKI_PREFIX: [u8; 12] = [
     0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x03, 0x21, 0x00,
 ];
 
+/// The error for a scheme that has no [`Algorithm`] (and so no known key
+/// type).
 fn unsupported_scheme(scheme: &SignatureScheme) -> CryptoError {
     CryptoError::UnsupportedScheme {
-        keytype: scheme
-            .key_type()
-            .map(|keytype| keytype.to_string())
-            .unwrap_or_default(),
+        keytype: String::new(),
         scheme: scheme.to_string(),
     }
 }
@@ -308,15 +303,6 @@ impl Algorithm {
         }
     }
 
-    fn key_type(self) -> KeyType {
-        match self {
-            Algorithm::Ed25519 => KeyType::Ed25519,
-            Algorithm::EcdsaP256Sha256 | Algorithm::EcdsaP384Sha384 => KeyType::Ecdsa,
-            Algorithm::RsaPss(_) => KeyType::Rsa,
-            Algorithm::MlDsa(_) => KeyType::MlDsa,
-        }
-    }
-
     /// The message this algorithm signs for a metadata payload: the payload
     /// itself, except for ML-DSA (TAP 21).
     fn message(self, payload: &[u8]) -> Cow<'_, [u8]> {
@@ -346,13 +332,19 @@ impl Algorithm {
         Ok(key)
     }
 
-    /// Encodes a public key from a backend as a `keyval.public` string.
-    fn encode_public_key(self, key: &[u8]) -> String {
-        match self {
-            Algorithm::Ed25519 => hex::encode(key),
-            _ => pem_rfc7468::encode_string("PUBLIC KEY", pem_rfc7468::LineEnding::LF, key)
+    /// Describes a public key, in the form backends take, the way metadata
+    /// lists keys.
+    fn key(self, public_key: &[u8]) -> Key {
+        let scheme = self.scheme();
+        let public = match self {
+            Algorithm::Ed25519 => hex::encode(public_key),
+            _ => pem_rfc7468::encode_string("PUBLIC KEY", pem_rfc7468::LineEnding::LF, public_key)
                 .expect("PEM encoding of in-memory data cannot fail"),
-        }
+        };
+        let keytype = scheme
+            .key_type()
+            .expect("supported schemes have a key type");
+        Key::new(keytype, scheme, public)
     }
 }
 

@@ -62,110 +62,94 @@ pub(super) fn verify(
     message: &[u8],
     signature: &[u8],
 ) -> Result<(), CryptoError> {
-    let result = match algorithm {
-        Algorithm::Ed25519 => {
-            let public_key = public_key.try_into().map_err(invalid_public_key)?;
-            let key = ed25519::VerifyingKey::from_bytes(public_key).map_err(invalid_public_key)?;
-            let Ok(signature) = ed25519::Signature::from_slice(signature) else {
-                return Err(CryptoError::BadSignature);
-            };
-            key.verify_strict(message, &signature)
-        }
-        Algorithm::EcdsaP256Sha256 => {
-            use p256::ecdsa::{Signature, VerifyingKey};
-            let key = VerifyingKey::from_public_key_der(public_key).map_err(invalid_public_key)?;
-            Signature::from_der(signature).and_then(|signature| key.verify(message, &signature))
-        }
-        Algorithm::EcdsaP384Sha384 => {
-            use p384::ecdsa::{Signature, VerifyingKey};
-            let key = VerifyingKey::from_public_key_der(public_key).map_err(invalid_public_key)?;
-            Signature::from_der(signature).and_then(|signature| key.verify(message, &signature))
-        }
-        Algorithm::RsaPss(hash) => {
-            use rsa::pss::{Signature, VerifyingKey};
-            let key = RsaPublicKey::from_public_key_der(public_key).map_err(invalid_public_key)?;
-            let Ok(signature) = Signature::try_from(signature) else {
-                return Err(CryptoError::BadSignature);
-            };
-            // Signers disagree on the PSS salt length (python-tuf and go-tuf
-            // use the digest length, OpenSSL defaults to the maximum), so
-            // detect it.
-            match hash {
-                RsaPssHash::Sha256 => {
-                    VerifyingKey::<Sha256>::new_with_auto_salt_len(key).verify(message, &signature)
-                }
-                RsaPssHash::Sha384 => {
-                    VerifyingKey::<Sha384>::new_with_auto_salt_len(key).verify(message, &signature)
-                }
-                RsaPssHash::Sha512 => {
-                    VerifyingKey::<Sha512>::new_with_auto_salt_len(key).verify(message, &signature)
-                }
-            }
-        }
-        Algorithm::MlDsa(set) => {
-            return match set {
-                MlDsaParameterSet::MlDsa44 => {
-                    verify_ml_dsa::<MlDsa44>(public_key, message, signature)
-                }
-                MlDsaParameterSet::MlDsa65 => {
-                    verify_ml_dsa::<MlDsa65>(public_key, message, signature)
-                }
-                MlDsaParameterSet::MlDsa87 => {
-                    verify_ml_dsa::<MlDsa87>(public_key, message, signature)
-                }
-            };
-        }
-    };
-    result.map_err(|_| CryptoError::BadSignature)
-}
-
-fn verify_ml_dsa<P: MlDsaParameters>(
-    public_key: &[u8],
-    message: &[u8],
-    signature: &[u8],
-) -> Result<(), CryptoError> {
-    let key =
-        ml_dsa::VerifyingKey::<P>::from_public_key_der(public_key).map_err(invalid_public_key)?;
-    ml_dsa::Signature::<P>::try_from(signature)
-        .and_then(|signature| key.verify(message, &signature))
-        .map_err(|_| CryptoError::BadSignature)
-}
-
-pub(super) fn check_public_key(algorithm: Algorithm, public_key: &[u8]) -> Result<(), CryptoError> {
-    match algorithm {
-        Algorithm::Ed25519 => {
-            let public_key = public_key.try_into().map_err(invalid_public_key)?;
-            ed25519::VerifyingKey::from_bytes(public_key)
-                .map(drop)
-                .map_err(invalid_public_key)
-        }
-        Algorithm::EcdsaP256Sha256 => p256::ecdsa::VerifyingKey::from_public_key_der(public_key)
-            .map(drop)
-            .map_err(invalid_public_key),
-        Algorithm::EcdsaP384Sha384 => p384::ecdsa::VerifyingKey::from_public_key_der(public_key)
-            .map(drop)
-            .map_err(invalid_public_key),
-        Algorithm::RsaPss(_) => RsaPublicKey::from_public_key_der(public_key)
-            .map(drop)
-            .map_err(invalid_public_key),
-        Algorithm::MlDsa(set) => match set {
-            MlDsaParameterSet::MlDsa44 => {
-                ml_dsa::VerifyingKey::<MlDsa44>::from_public_key_der(public_key).map(drop)
-            }
-            MlDsaParameterSet::MlDsa65 => {
-                ml_dsa::VerifyingKey::<MlDsa65>::from_public_key_der(public_key).map(drop)
-            }
-            MlDsaParameterSet::MlDsa87 => {
-                ml_dsa::VerifyingKey::<MlDsa87>::from_public_key_der(public_key).map(drop)
-            }
-        }
-        .map_err(invalid_public_key),
+    if VerifyingKey::decode(algorithm, public_key)?.verify(message, signature) {
+        Ok(())
+    } else {
+        Err(CryptoError::BadSignature)
     }
 }
 
+pub(super) fn check_public_key(algorithm: Algorithm, public_key: &[u8]) -> Result<(), CryptoError> {
+    VerifyingKey::decode(algorithm, public_key).map(drop)
+}
+
 pub(super) fn rsa_modulus_bits(public_key: &[u8]) -> Result<usize, CryptoError> {
-    let key = RsaPublicKey::from_public_key_der(public_key).map_err(invalid_public_key)?;
+    let key: RsaPublicKey = from_spki(public_key)?;
     Ok(key.n().bits() as usize)
+}
+
+/// A public key, decoded for the algorithm it is used with.
+enum VerifyingKey {
+    Ed25519(ed25519::VerifyingKey),
+    P256(p256::ecdsa::VerifyingKey),
+    P384(p384::ecdsa::VerifyingKey),
+    RsaPss(RsaPssHash, RsaPublicKey),
+    MlDsa44(ml_dsa::VerifyingKey<MlDsa44>),
+    MlDsa65(ml_dsa::VerifyingKey<MlDsa65>),
+    MlDsa87(ml_dsa::VerifyingKey<MlDsa87>),
+}
+
+impl VerifyingKey {
+    fn decode(algorithm: Algorithm, public_key: &[u8]) -> Result<Self, CryptoError> {
+        Ok(match algorithm {
+            Algorithm::Ed25519 => {
+                let bytes = public_key.try_into().map_err(invalid_public_key)?;
+                Self::Ed25519(ed25519::VerifyingKey::from_bytes(bytes).map_err(invalid_public_key)?)
+            }
+            Algorithm::EcdsaP256Sha256 => Self::P256(from_spki(public_key)?),
+            Algorithm::EcdsaP384Sha384 => Self::P384(from_spki(public_key)?),
+            Algorithm::RsaPss(hash) => Self::RsaPss(hash, from_spki(public_key)?),
+            Algorithm::MlDsa(MlDsaParameterSet::MlDsa44) => Self::MlDsa44(from_spki(public_key)?),
+            Algorithm::MlDsa(MlDsaParameterSet::MlDsa65) => Self::MlDsa65(from_spki(public_key)?),
+            Algorithm::MlDsa(MlDsaParameterSet::MlDsa87) => Self::MlDsa87(from_spki(public_key)?),
+        })
+    }
+
+    fn verify(self, message: &[u8], signature: &[u8]) -> bool {
+        match self {
+            Self::Ed25519(key) => ed25519::Signature::from_slice(signature)
+                .is_ok_and(|signature| key.verify_strict(message, &signature).is_ok()),
+            Self::P256(key) => p256::ecdsa::Signature::from_der(signature)
+                .is_ok_and(|signature| key.verify(message, &signature).is_ok()),
+            Self::P384(key) => p384::ecdsa::Signature::from_der(signature)
+                .is_ok_and(|signature| key.verify(message, &signature).is_ok()),
+            Self::RsaPss(hash, key) => {
+                use rsa::pss::{Signature, VerifyingKey};
+                let Ok(signature) = Signature::try_from(signature) else {
+                    return false;
+                };
+                // Signers disagree on the PSS salt length (python-tuf and go-tuf
+                // use the digest length, OpenSSL defaults to the maximum), so
+                // detect it.
+                match hash {
+                    RsaPssHash::Sha256 => VerifyingKey::<Sha256>::new_with_auto_salt_len(key)
+                        .verify(message, &signature),
+                    RsaPssHash::Sha384 => VerifyingKey::<Sha384>::new_with_auto_salt_len(key)
+                        .verify(message, &signature),
+                    RsaPssHash::Sha512 => VerifyingKey::<Sha512>::new_with_auto_salt_len(key)
+                        .verify(message, &signature),
+                }
+                .is_ok()
+            }
+            Self::MlDsa44(key) => verify_ml_dsa(&key, message, signature),
+            Self::MlDsa65(key) => verify_ml_dsa(&key, message, signature),
+            Self::MlDsa87(key) => verify_ml_dsa(&key, message, signature),
+        }
+    }
+}
+
+fn verify_ml_dsa<P: MlDsaParams>(
+    key: &ml_dsa::VerifyingKey<P>,
+    message: &[u8],
+    signature: &[u8],
+) -> bool {
+    ml_dsa::Signature::<P>::try_from(signature)
+        .is_ok_and(|signature| key.verify(message, &signature).is_ok())
+}
+
+/// Decodes a DER-encoded `SubjectPublicKeyInfo`.
+fn from_spki<K: DecodePublicKey>(der: &[u8]) -> Result<K, CryptoError> {
+    K::from_public_key_der(der).map_err(invalid_public_key)
 }
 
 pub(super) enum SigningKey {

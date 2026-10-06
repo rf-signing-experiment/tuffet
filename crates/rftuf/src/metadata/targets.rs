@@ -157,7 +157,7 @@ impl Delegations {
     fn validate(&self) -> Result<()> {
         let mut names = HashSet::new();
         for role in &self.roles {
-            if role.name.is_empty() || RoleType::is_top_level(&role.name) {
+            if role.name.is_empty() || collides_with_top_level(&role.name) {
                 return Err(invalid(format!(
                     "invalid delegated role name {:?}",
                     role.name
@@ -179,6 +179,19 @@ impl Delegations {
         }
         Ok(())
     }
+}
+
+/// Whether a delegated role called `name` would be stored like top-level
+/// metadata (`timestamp.json`) or a version of root metadata
+/// (`2.root.json`), ignoring case as case-insensitive filesystems do.
+/// Clients store a role's metadata under its name, so such a role could
+/// overwrite the metadata they trust.
+fn collides_with_top_level(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    let root_version = name.strip_suffix(".root").is_some_and(|version| {
+        !version.is_empty() && version.bytes().all(|byte| byte.is_ascii_digit())
+    });
+    RoleType::is_top_level(&name) || root_version
 }
 
 impl DelegatedRole {

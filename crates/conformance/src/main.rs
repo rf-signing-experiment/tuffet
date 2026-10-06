@@ -9,6 +9,7 @@
 #![forbid(unsafe_code)]
 
 use std::error::Error;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Duration;
@@ -16,7 +17,7 @@ use std::time::Duration;
 use clap::{Parser, Subcommand};
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use rftuf::Updater;
-use rftuf::store::FilesystemStore;
+use rftuf::store::{FilesystemStore, MetadataStore};
 use rftuf_http::{HttpTransport, Url, reqwest};
 
 type Result<T, E = Box<dyn Error>> = std::result::Result<T, E>;
@@ -116,14 +117,57 @@ fn updater(
     metadata_dir: &Path,
     metadata_url: Url,
     targets_url: Url,
-) -> Result<Updater<HttpTransport, FilesystemStore>> {
+) -> Result<Updater<HttpTransport, Store>> {
     // The test suite's repository runs on localhost, so bypass any proxy.
     let client = reqwest::Client::builder()
         .no_proxy()
         .timeout(Duration::from_secs(30))
         .build()?;
     let transport = HttpTransport::with_client(client, metadata_url, targets_url);
-    Ok(Updater::builder(transport, FilesystemStore::new(metadata_dir)?).build()?)
+    Ok(Updater::builder(transport, Store::new(metadata_dir)?).build()?)
+}
+
+/// The client's local storage. The test suite expects the metadata directory
+/// to hold only unversioned metadata files, so the root versions that the
+/// updater keeps (`2.root.json`, ...) go to its `root_history` subdirectory.
+struct Store {
+    metadata: FilesystemStore,
+    root_history: FilesystemStore,
+}
+
+impl Store {
+    fn new(metadata_dir: &Path) -> io::Result<Self> {
+        Ok(Store {
+            metadata: FilesystemStore::new(metadata_dir)?,
+            root_history: FilesystemStore::new(metadata_dir.join("root_history"))?,
+        })
+    }
+
+    /// The store that holds the file `name`.
+    fn of(&self, name: &str) -> &FilesystemStore {
+        let root_version = name.strip_suffix(".root.json").is_some_and(|version| {
+            !version.is_empty() && version.bytes().all(|byte| byte.is_ascii_digit())
+        });
+        if root_version {
+            &self.root_history
+        } else {
+            &self.metadata
+        }
+    }
+}
+
+impl MetadataStore for Store {
+    fn load(&self, name: &str) -> io::Result<Option<Vec<u8>>> {
+        self.of(name).load(name)
+    }
+
+    fn store(&self, name: &str, data: &[u8]) -> io::Result<()> {
+        self.of(name).store(name, data)
+    }
+
+    fn remove(&self, name: &str) -> io::Result<()> {
+        self.of(name).remove(name)
+    }
 }
 
 fn required<T>(value: Option<T>, flag: &str) -> Result<T> {
