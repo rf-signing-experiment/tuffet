@@ -2,10 +2,12 @@
 //! 5.5.7, 5.6.6) by file name. `FilesystemStore` keeps it in one directory,
 //! which names cannot escape, and writes files atomically.
 
+use std::sync::Arc;
+
 use rftuf::store::{FilesystemStore, MemoryStore, MetadataStore};
 
 /// What every store does.
-fn check_store(store: &dyn MetadataStore) {
+fn check_store(store: &impl MetadataStore) {
     assert_eq!(store.load("root.json").unwrap(), None);
     store.store("root.json", b"one").unwrap();
     store.store("root.json", b"two").unwrap();
@@ -25,6 +27,15 @@ fn check_store(store: &dyn MetadataStore) {
 #[test]
 fn memory_store_stores_loads_and_removes() {
     check_store(&MemoryStore::new());
+}
+
+/// References, boxes and `Arc`s of stores are stores too.
+#[test]
+fn references_to_stores_are_stores() {
+    check_store(&&MemoryStore::new());
+    let boxed: Box<dyn MetadataStore> = Box::new(MemoryStore::new());
+    check_store(&boxed);
+    check_store(&Arc::new(MemoryStore::new()));
 }
 
 #[test]
@@ -71,9 +82,11 @@ fn filesystem_store_names_cannot_escape_its_directory() {
 /// Failures other than a missing file are reported, not taken for a missing
 /// file.
 #[test]
-fn filesystem_store_reports_files_that_cannot_be_read() {
+fn filesystem_store_reports_files_that_cannot_be_read_or_removed() {
     let dir = tempfile::tempdir().unwrap();
     let store = FilesystemStore::new(dir.path()).unwrap();
     std::fs::create_dir(dir.path().join("root.json")).unwrap();
+    std::fs::write(dir.path().join("root.json/inside"), b"").unwrap();
     assert!(store.load("root.json").is_err());
+    assert!(store.remove("root.json").is_err());
 }

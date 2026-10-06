@@ -63,6 +63,7 @@ fn downloads_at_most_max_root_rotations_root_versions_per_update() {
     let mut config = UpdaterConfig::default();
     config.max_root_rotations = 2;
     let mut client = repo.client_with(config);
+    assert_eq!(client.updater.config().max_root_rotations, 2);
 
     client.refresh().unwrap();
     assert_eq!(client.root_version(), 3);

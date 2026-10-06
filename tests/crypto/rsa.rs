@@ -54,6 +54,19 @@ fn salt_lengths() {
     }
 }
 
+/// A signature that is not as long as the modulus is not a valid signature.
+#[test]
+fn malformed_signatures_are_rejected() {
+    let key = key(SignatureScheme::RsassaPssSha256, "rsa.pub.pem");
+    let valid = data::crypto("rsa-pss-saltdigest.sig");
+    for malformed in [&[][..], &valid[1..], &[0; 256]] {
+        assert!(matches!(
+            verify_signature(&key, &message(), malformed),
+            Err(CryptoError::BadSignature)
+        ));
+    }
+}
+
 /// "All RSA keys MUST be at least 2048 bits."
 #[test]
 fn keys_of_fewer_than_2048_bits_are_rejected() {
@@ -71,21 +84,20 @@ fn keys_of_fewer_than_2048_bits_are_rejected() {
     ));
 }
 
-/// Known deviation: key sizes are checked in whole bytes, so keys of 2041 to
-/// 2047 bits, whose moduli are also 256 bytes long, are taken for 2048-bit
-/// keys. (With `aws-lc-rs`, only `public_key_from_pem` accepts them.)
+/// Key sizes are counted in bits: a 2047-bit modulus is as long in bytes as a
+/// 2048-bit one, but it is too small. (Here with a valid signature, so that
+/// only the size of the key can make verification fail.)
 #[test]
-#[ignore = "known deviation: RSA keys of 2041 to 2047 bits are accepted"]
 fn keys_of_2047_bits_are_rejected() {
     let pem = data::crypto_text("rsa2047.pub.pem");
     assert!(matches!(
         public_key_from_pem(&SignatureScheme::RsassaPssSha256, &pem),
-        Err(CryptoError::InvalidPublicKey(_))
+        Err(CryptoError::InvalidPublicKey(reason)) if reason.contains("got 2047")
     ));
     let key = key(SignatureScheme::RsassaPssSha256, "rsa2047.pub.pem");
     assert!(matches!(
         verify_signature(&key, &message(), &data::crypto("rsa2047-pss.sig")),
-        Err(CryptoError::InvalidPublicKey(_))
+        Err(CryptoError::InvalidPublicKey(reason)) if reason.contains("got 2047")
     ));
     assert!(matches!(
         PrivateKey::from_pkcs8_pem(&data::crypto_text("rsa2047.key.pem")),

@@ -2,9 +2,12 @@
 //! for all top-level roles, including the root role itself".
 
 use rftuf::Error;
-use rftuf::metadata::{KeyId, Root};
+use rftuf::crypto::Signer;
+use rftuf::metadata::{KeyId, Metadata, RoleType, Root};
 use serde_json::{Value, json};
 
+use crate::support::far_future;
+use crate::support::keys::{key, key_id};
 use crate::{decode, invalid_reason, python_tuf_payload};
 
 #[test]
@@ -106,4 +109,21 @@ fn the_mirrors_role_is_kept_but_not_used() {
     );
     let encoded: Value = serde_json::from_slice(&root.to_bytes().unwrap()).unwrap();
     assert_eq!(encoded["signed"]["roles"]["mirrors"]["threshold"], 1);
+}
+
+/// Root metadata is created with `Root::new` and `Root::add_key`, which lists
+/// a key once for each role it is added to.
+#[test]
+fn keys_are_listed_once_for_each_role_they_are_added_to() {
+    let signer = key("root and targets");
+    let id = key_id(&signer);
+    let mut root = Root::new(far_future());
+    for role in [RoleType::Root, RoleType::Root, RoleType::Targets] {
+        root.add_key(role, id.clone(), signer.public_key().clone());
+    }
+    assert_eq!(root.roles.root.keyids, [id]);
+    assert_eq!(root.roles.targets.keyids, root.roles.root.keyids);
+    assert!(root.roles.timestamp.keyids.is_empty());
+    assert_eq!(root.keys.len(), 1);
+    Metadata::<Root>::new(root).unwrap();
 }

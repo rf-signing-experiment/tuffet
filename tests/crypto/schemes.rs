@@ -79,6 +79,7 @@ fn verifies_signatures_made_by_openssl() {
 }
 
 #[test]
+#[cfg_attr(debug_assertions, ignore)] // test is too slow in debug mode.
 fn generated_keys_sign_and_verify() {
     for (scheme, _, _) in openssl_signatures() {
         let signer = PrivateKey::generate(&scheme).unwrap();

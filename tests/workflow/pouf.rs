@@ -11,7 +11,7 @@ use futures_executor::block_on;
 use rftuf::crypto::{HashAlgorithm, PrivateKey, Signer};
 use rftuf::metadata::{
     Key, KeyId, MetaFile, Metadata, Role, RoleType, Root, Signature, Snapshot, TargetFile, Targets,
-    Timestamp,
+    Timestamp, UnrecognizedFields,
 };
 use rftuf::pouf::{Decoded, Json, Pouf};
 use rftuf::store::{MemoryStore, MetadataStore};
@@ -32,8 +32,12 @@ impl Pouf for Jsn {
         Json::decode(bytes)
     }
 
-    fn encode<T: Serialize>(signed: &T, signatures: &[Signature]) -> rftuf::Result<Vec<u8>> {
-        Json::encode(signed, signatures)
+    fn encode<T: Serialize>(
+        signed: &T,
+        signatures: &[Signature],
+        unrecognized_fields: &UnrecognizedFields,
+    ) -> rftuf::Result<Vec<u8>> {
+        Json::encode(signed, signatures, unrecognized_fields)
     }
 
     fn canonicalize<T: Serialize + ?Sized>(value: &T) -> rftuf::Result<Vec<u8>> {

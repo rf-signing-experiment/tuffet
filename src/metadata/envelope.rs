@@ -42,9 +42,14 @@ impl Signature {
 /// from the payload. For this reason the payload cannot be changed in place:
 /// take it out with [`into_signed`](Self::into_signed), change it and wrap it
 /// again, which also drops the signatures it invalidated.
+///
+/// Fields of the envelope itself, next to the payload and the signatures,
+/// that this implementation does not recognize are kept too, but they are
+/// not signed; see [`unrecognized_fields`](Self::unrecognized_fields).
 pub struct Metadata<T, P = Json> {
     signed: T,
     signatures: Vec<Signature>,
+    unrecognized_fields: UnrecognizedFields,
     canonical_signed: Vec<u8>,
     pouf: PhantomData<fn() -> P>,
 }
@@ -57,6 +62,7 @@ impl<T: Role, P: Pouf> Metadata<T, P> {
         Ok(Metadata {
             signed,
             signatures: Vec::new(),
+            unrecognized_fields: BTreeMap::new(),
             canonical_signed,
             pouf: PhantomData,
         })
@@ -72,6 +78,7 @@ impl<T: Role, P: Pouf> Metadata<T, P> {
         let Decoded {
             signed,
             signatures,
+            unrecognized_fields,
             canonical_signed,
         } = P::decode::<T>(bytes)?;
         let mut keyids = HashSet::new();
@@ -86,6 +93,7 @@ impl<T: Role, P: Pouf> Metadata<T, P> {
         Ok(Metadata {
             signed,
             signatures,
+            unrecognized_fields,
             canonical_signed,
             pouf: PhantomData,
         })
@@ -93,7 +101,7 @@ impl<T: Role, P: Pouf> Metadata<T, P> {
 
     /// Encodes the metadata for storage or publication.
     pub fn to_bytes(&self) -> Result<Vec<u8>> {
-        P::encode(&self.signed, &self.signatures)
+        P::encode(&self.signed, &self.signatures, &self.unrecognized_fields)
     }
 
     pub fn signed(&self) -> &T {
@@ -112,6 +120,22 @@ impl<T: Role, P: Pouf> Metadata<T, P> {
     /// The canonical form of the payload: the bytes that signatures cover.
     pub fn canonical_signed(&self) -> &[u8] {
         &self.canonical_signed
+    }
+
+    /// The fields of the envelope, next to the payload and the signatures,
+    /// that this implementation does not recognize. Section 4 of the
+    /// specification allows formats to be extended this way, and they are
+    /// kept when the metadata is encoded again. Signatures do not cover
+    /// them, so they must not be trusted.
+    pub fn unrecognized_fields(&self) -> &UnrecognizedFields {
+        &self.unrecognized_fields
+    }
+
+    /// Mutable access to [`unrecognized_fields`](Self::unrecognized_fields).
+    /// As they are not signed, changing them does not invalidate the
+    /// signatures.
+    pub fn unrecognized_fields_mut(&mut self) -> &mut UnrecognizedFields {
+        &mut self.unrecognized_fields
     }
 
     /// Signs the payload, replacing any earlier signature by the same key.
@@ -189,6 +213,7 @@ impl<T: Clone, P> Clone for Metadata<T, P> {
         Metadata {
             signed: self.signed.clone(),
             signatures: self.signatures.clone(),
+            unrecognized_fields: self.unrecognized_fields.clone(),
             canonical_signed: self.canonical_signed.clone(),
             pouf: PhantomData,
         }
@@ -200,6 +225,7 @@ impl<T: fmt::Debug, P> fmt::Debug for Metadata<T, P> {
         f.debug_struct("Metadata")
             .field("signed", &self.signed)
             .field("signatures", &self.signatures)
+            .field("unrecognized_fields", &self.unrecognized_fields)
             .finish_non_exhaustive()
     }
 }

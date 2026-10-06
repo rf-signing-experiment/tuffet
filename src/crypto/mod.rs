@@ -37,7 +37,9 @@
 //! - `check_public_key(Algorithm, public_key: &[u8])`, which fails with
 //!   `InvalidPublicKey` unless `public_key` (encoded as for `verify`) is a
 //!   valid key for the algorithm.
-//! - `rsa_modulus_bits(public_key: &[u8]) -> Result<usize, CryptoError>`.
+//! - `rsa_modulus_bits(public_key: &[u8]) -> Result<usize, CryptoError>`: the
+//!   size of the modulus in bits, exactly (not its length in bytes times 8:
+//!   a 2047-bit key is not a 2048-bit key).
 //! - `SigningKey`, with `generate(Algorithm)`, `from_pkcs8_der(&[u8])`,
 //!   `algorithm(&self)`, `public_key(&self)` (encoded as for `verify`) and
 //!   `sign(&self, message)`. Generated RSA keys have 3072 bits, RSA keys

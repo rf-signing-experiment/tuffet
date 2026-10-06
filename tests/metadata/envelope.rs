@@ -49,6 +49,10 @@ fn rejects_documents_that_are_not_signed_metadata() {
     ));
     for (case, document) in [
         ("an array", json!([])),
+        (
+            "an array of the values of signatures and signed",
+            json!([timestamp["signatures"], timestamp["signed"]]),
+        ),
         ("no signed", without("signed")),
         ("no signatures", without("signatures")),
         ("signed not an object", with("signed", json!("timestamp"))),
@@ -93,8 +97,9 @@ fn key_ids_must_be_unique_in_signatures() {
         .unwrap()
         .push(signature);
     let result = Metadata::<Timestamp>::from_bytes(&serde_json::to_vec(&document).unwrap());
+    // The error names the key.
     assert!(
-        matches!(result, Err(Error::InvalidMetadata(reason)) if reason.contains("multiple signatures"))
+        matches!(result, Err(Error::InvalidMetadata(reason)) if reason.contains("multiple signatures by key 8a1c4a3ac2d515dec982ba9910c5fd79b91ae57f625b9cff25d06bf0a61c1758"))
     );
 }
 
@@ -114,10 +119,10 @@ fn signatures_are_hex_encoded() {
     };
 
     let uppercase = with_sig(&sig.to_uppercase()).unwrap();
-    assert_eq!(
-        uppercase.signatures()[0].sig.to_vec(),
-        hex::decode(&sig).unwrap()
-    );
+    let bytes = &uppercase.signatures()[0].sig;
+    assert_eq!(bytes.as_ref(), hex::decode(&sig).unwrap());
+    assert_eq!(bytes.to_string(), sig);
+    assert_eq!(bytes.clone().into_vec(), hex::decode(&sig).unwrap());
     let reencoded: Value = serde_json::from_slice(&uppercase.to_bytes().unwrap()).unwrap();
     assert_eq!(reencoded["signatures"][0]["sig"], json!(sig));
 
@@ -127,6 +132,23 @@ fn signatures_are_hex_encoded() {
             "{invalid}"
         );
     }
+}
+
+/// Signatures cover the payload as it was received, so the payload of
+/// decoded metadata cannot be changed in place: it is taken out, changed,
+/// and wrapped again, without the signatures it invalidated.
+#[test]
+fn a_changed_payload_is_wrapped_again_without_its_signatures() {
+    let timestamp = Metadata::<Timestamp>::from_bytes(&data::python_tuf("timestamp.json")).unwrap();
+    assert_eq!(timestamp.signatures().len(), 1);
+    let received = timestamp.canonical_signed().to_vec();
+
+    let mut payload = timestamp.into_signed();
+    payload.version += 1;
+    let changed = Metadata::<Timestamp>::new(payload).unwrap();
+    assert!(changed.signatures().is_empty());
+    assert_eq!(changed.signed().version, 2);
+    assert_ne!(changed.canonical_signed(), received);
 }
 
 /// Signing again with a key replaces its earlier signature, so that

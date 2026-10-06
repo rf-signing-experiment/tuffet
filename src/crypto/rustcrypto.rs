@@ -165,7 +165,7 @@ pub(super) fn check_public_key(algorithm: Algorithm, public_key: &[u8]) -> Resul
 
 pub(super) fn rsa_modulus_bits(public_key: &[u8]) -> Result<usize, CryptoError> {
     let key = RsaPublicKey::from_public_key_der(public_key).map_err(invalid_public_key)?;
-    Ok(key.size() * 8)
+    Ok(key.n().bits() as usize)
 }
 
 pub(super) enum SigningKey {

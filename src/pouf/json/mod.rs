@@ -11,7 +11,7 @@ use serde_json::Value;
 
 use super::{Decoded, Pouf};
 use crate::error::{Error, Result};
-use crate::metadata::Signature;
+use crate::metadata::{Signature, UnrecognizedFields};
 
 pub mod canonical;
 
@@ -32,12 +32,21 @@ impl Pouf for Json {
         Ok(Decoded {
             signed,
             signatures: envelope.signatures,
+            unrecognized_fields: envelope.unrecognized_fields,
             canonical_signed,
         })
     }
 
-    fn encode<T: Serialize>(signed: &T, signatures: &[Signature]) -> Result<Vec<u8>> {
-        let envelope = Envelope { signatures, signed };
+    fn encode<T: Serialize>(
+        signed: &T,
+        signatures: &[Signature],
+        unrecognized_fields: &UnrecognizedFields,
+    ) -> Result<Vec<u8>> {
+        let envelope = Envelope {
+            signatures,
+            signed,
+            unrecognized_fields,
+        };
         serde_json::to_vec_pretty(&envelope).map_err(|e| Error::Encode(e.into()))
     }
 
@@ -47,10 +56,14 @@ impl Pouf for Json {
     }
 }
 
+/// A metadata file. Being flattened, `unrecognized_fields` also makes serde
+/// accept only a JSON object, as opposed to an array of the field values.
 #[derive(Serialize, Deserialize)]
-struct Envelope<S, T = Vec<Signature>> {
+struct Envelope<S, T = Vec<Signature>, U = UnrecognizedFields> {
     signatures: T,
     signed: S,
+    #[serde(flatten)]
+    unrecognized_fields: U,
 }
 
 fn decode_error(error: impl std::error::Error + Send + Sync + 'static) -> Error {

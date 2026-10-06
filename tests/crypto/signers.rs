@@ -95,3 +95,18 @@ fn signing_failures_are_reported() {
     ));
     assert!(targets.signatures().is_empty());
 }
+
+/// A private key's `Debug` output shows its public key, never its secret.
+#[test]
+fn private_keys_do_not_show_their_secret() {
+    let pem = data::crypto_text("ed25519.key.pem");
+    let (_, der) = pem_rfc7468::decode_vec(pem.as_bytes()).unwrap();
+    // An Ed25519 PKCS#8 key ends with its 32-byte seed.
+    let seed = &der[der.len() - 32..];
+    let key = PrivateKey::from_pkcs8_der(&der).unwrap();
+
+    let debug = format!("{key:?}");
+    assert!(debug.contains(&data::crypto_text("ed25519.pub.hex")));
+    assert!(!debug.contains(&hex::encode(seed)));
+    assert!(!debug.contains(&format!("{seed:?}")[1..20]));
+}

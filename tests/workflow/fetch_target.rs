@@ -3,12 +3,17 @@
 //! A target is downloaded only once trusted targets metadata describes it,
 //! and only accepted if it has the length and hashes that metadata lists.
 
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+
 use futures_executor::block_on;
-use rftuf::Error;
 use rftuf::metadata::Hashes;
+use rftuf::store::MemoryStore;
+use rftuf::transport::{ByteStream, Transport, TransportError};
+use rftuf::{Error, Updater};
 use serde_json::json;
 
-use crate::support::{TestRepo, assert_err};
+use crate::support::{RecordingTransport, TestRepo, assert_err, now};
 
 /// A repository with one target, `file`, whose content is `genuine`, and a
 /// client that trusts its metadata.
@@ -157,6 +162,58 @@ fn downloading_to_a_file_writes_only_verified_data() {
     );
 }
 
+/// `download_target_to` writes the target to a temporary file in the
+/// destination's directory, so that moving it into place once it is verified
+/// is atomic, and the destination never holds unverified data.
+#[test]
+fn downloading_to_a_file_writes_a_temporary_file_next_to_it() {
+    /// A transport that lists a directory when it fetches a target.
+    struct ListingTransport {
+        inner: Arc<RecordingTransport>,
+        dir: PathBuf,
+        listed: Mutex<Vec<String>>,
+    }
+
+    impl Transport for ListingTransport {
+        async fn fetch_metadata(&self, name: &str) -> Result<ByteStream, TransportError> {
+            self.inner.fetch_metadata(name).await
+        }
+
+        async fn fetch_target(&self, path: &str) -> Result<ByteStream, TransportError> {
+            let files = std::fs::read_dir(&self.dir)
+                .unwrap()
+                .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+                .collect();
+            *self.listed.lock().unwrap() = files;
+            self.inner.fetch_target(path).await
+        }
+    }
+
+    let (repo, _client) = repo_with_target();
+    let dir = tempfile::tempdir().unwrap();
+    let transport = ListingTransport {
+        inner: repo.transport.clone(),
+        dir: dir.path().to_owned(),
+        listed: Mutex::default(),
+    };
+    let mut updater = Updater::builder(&transport, MemoryStore::new())
+        .initial_root(repo.initial_root())
+        .build()
+        .unwrap();
+    block_on(updater.refresh_at(now())).unwrap();
+    let target = block_on(updater.get_target_info("file")).unwrap().unwrap();
+    let destination = dir.path().join("file");
+    block_on(updater.download_target_to(&target, &destination)).unwrap();
+
+    let listed = transport.listed.lock().unwrap().clone();
+    let [temporary] = &listed[..] else {
+        panic!("one temporary file expected, found {listed:?}");
+    };
+    assert_ne!(temporary, "file");
+    assert_eq!(std::fs::read(&destination).unwrap(), b"genuine");
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+}
+
 /// A verified target that cannot be moved into place (here, because the
 /// destination is a directory) is reported, and leaves no temporary file.
 #[test]
@@ -202,6 +259,22 @@ fn matches_file_checks_length_and_hashes() {
     assert!(!target.matches_file(&path).unwrap(), "other content");
     std::fs::write(&path, b"genuine and more").unwrap();
     assert!(!target.matches_file(&path).unwrap(), "longer");
+
+    // Without a supported hash, no file can be shown to be the target.
+    let mut unverifiable = target.clone();
+    unverifiable.file.hashes = Hashes::new();
+    unverifiable.file.hashes.insert("md5", vec![0; 16]);
+    std::fs::write(&path, b"genuine").unwrap();
+    assert!(
+        !unverifiable.matches_file(&path).unwrap(),
+        "no supported hash"
+    );
+
+    // Other errors than a missing file are reported (here, a path that goes
+    // through a file).
+    if cfg!(unix) {
+        assert!(target.matches_file(&path.join("inside")).is_err());
+    }
 }
 
 /// 4.5 (CUSTOM): "the elements and values of the CUSTOM object will be made

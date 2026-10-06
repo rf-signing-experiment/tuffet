@@ -7,8 +7,11 @@
 //! 5.5.7, 5.6.6).
 
 use std::io;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use futures_executor::block_on;
+use rftuf::metadata::RoleType;
 use rftuf::store::{MemoryStore, MetadataStore};
 use rftuf::{Error, Updater};
 
@@ -170,32 +173,71 @@ fn invalid_persisted_metadata_is_downloaded_again() {
     }
 }
 
-/// Failures of local storage abort the update and are reported.
-#[test]
-fn local_storage_failures_are_reported() {
-    /// Storage that holds a root but cannot be written to.
-    struct ReadOnly(MemoryStore);
+/// Local storage whose operations fail when told to.
+#[derive(Default)]
+struct FaultyStore {
+    files: MemoryStore,
+    fail_loads: AtomicBool,
+    fail_stores: AtomicBool,
+    fail_removes: AtomicBool,
+}
 
-    impl MetadataStore for ReadOnly {
-        fn load(&self, name: &str) -> io::Result<Option<Vec<u8>>> {
-            self.0.load(name)
-        }
-
-        fn store(&self, _: &str, _: &[u8]) -> io::Result<()> {
-            Err(io::Error::other("read-only"))
-        }
-
-        fn remove(&self, _: &str) -> io::Result<()> {
-            Err(io::Error::other("read-only"))
+impl FaultyStore {
+    fn check(fail: &AtomicBool) -> io::Result<()> {
+        match fail.load(Ordering::SeqCst) {
+            true => Err(io::Error::other("simulated storage failure")),
+            false => Ok(()),
         }
     }
+}
 
-    let repo = TestRepo::new();
-    let store = ReadOnly(MemoryStore::new());
-    store.0.store("root.json", &repo.initial_root()).unwrap();
-    let mut updater = Updater::builder(repo.transport.clone(), &store)
-        .build()
-        .unwrap();
+impl MetadataStore for FaultyStore {
+    fn load(&self, name: &str) -> io::Result<Option<Vec<u8>>> {
+        Self::check(&self.fail_loads)?;
+        self.files.load(name)
+    }
+
+    fn store(&self, name: &str, data: &[u8]) -> io::Result<()> {
+        Self::check(&self.fail_stores)?;
+        self.files.store(name, data)
+    }
+
+    fn remove(&self, name: &str) -> io::Result<()> {
+        Self::check(&self.fail_removes)?;
+        self.files.remove(name)
+    }
+}
+
+/// Failures of local storage, whether to load, store or remove metadata,
+/// abort the update and are reported with the name of the file.
+#[test]
+fn local_storage_failures_are_reported() {
+    let mut repo = TestRepo::new();
+    let store = Arc::new(FaultyStore::default());
+    let updater = |store: &Arc<FaultyStore>| {
+        Updater::builder(repo.transport.clone(), store.clone())
+            .initial_root(repo.initial_root())
+            .build()
+    };
+
+    store.fail_loads.store(true, Ordering::SeqCst);
+    assert_err!(updater(&store), Error::Store { name, .. } if name == "root.json");
+    store.fail_loads.store(false, Ordering::SeqCst);
+
+    let mut updater = updater(&store).unwrap();
+    store.fail_stores.store(true, Ordering::SeqCst);
+    assert_err!(
+        block_on(updater.refresh_at(now())),
+        Error::Store { name, .. } if name == "timestamp.json"
+    );
+    store.fail_stores.store(false, Ordering::SeqCst);
+    block_on(updater.refresh_at(now())).unwrap();
+
+    // Rotating the timestamp key makes the update remove the trusted
+    // timestamp and snapshot metadata (5.3.11).
+    repo.rotate_key(RoleType::Timestamp);
+    repo.publish_root();
+    store.fail_removes.store(true, Ordering::SeqCst);
     assert_err!(
         block_on(updater.refresh_at(now())),
         Error::Store { name, .. } if name == "timestamp.json"

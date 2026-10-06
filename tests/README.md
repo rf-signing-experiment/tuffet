@@ -32,7 +32,6 @@ cargo test -p rftuf                                        # rustcrypto backend
 cargo test -p rftuf --no-default-features -F aws-lc-rs     # aws-lc-rs backend
 cargo test -p rftuf --all-features                         # both, plus backend parity
 cargo test -p rftuf --test workflow update_root            # one section (5.3)
-cargo test -p rftuf -- --ignored                           # known deviations: these fail
 SNAPSHOTS=overwrite cargo test -p rftuf --test metadata    # accept changed snapshots
 ```
 
@@ -103,9 +102,16 @@ tests that show each is detected:
   state what the specification requires, and fail until rftuf complies.
 - **Tests must be able to fail.** A test only shows that a rule is enforced
   if breaking the rule makes it fail. When adding or changing a check in
-  `src/`, break it on purpose (or use a mutation testing tool such as
-  [cargo-mutants]) and see a test fail.
+  `src/`, break it on purpose and see a test fail, and run [cargo-mutants]
+  (see below).
 
+## Code Coverage
+
+Coverage shows what the tests run,
+
+```sh
+cargo llvm-cov -p rftuf --summary-only    # coverage
+```
 ## Test repositories
 
 `support::TestRepo` is a repository built with rftuf's public metadata API.
@@ -145,15 +151,13 @@ point of the workflow. `repo.transport.fail(name)` simulates a network
 failure, and `client.restart()` a client restarted on the same local
 storage.
 
-## Known deviations
+## Differences from the specification
 
-| Test | Deviation |
-| --- | --- |
-| `crypto::rsa::keys_of_2047_bits_are_rejected` | 4.2.2: "All RSA keys MUST be at least 2048 bits." Key sizes are checked in whole bytes, so keys of 2041 to 2047 bits are accepted. |
-| `metadata::unrecognized_fields::unrecognized_fields_of_the_outer_object_are_preserved_when_reencoding` | Section 4: unknown fields "must [be preserved] when re-serializing". Fields next to `signed` and `signatures` are dropped. The updater persists metadata as downloaded, so only tools that re-encode metadata are affected. |
+There are no known deviations: a test that shows one would be marked
+`#[ignore]` with the reason, as described under Conventions.
 
-Deliberate differences from the specification, described in the crate
-documentation, are tested as rftuf's behavior:
+Deliberate differences, described in the crate documentation, are tested
+as rftuf's behavior:
 
 - Key IDs are not recomputed (4.3); keys are compared by key material when
   counting signatures: `metadata::keys::key_ids_are_not_recomputed`,
@@ -166,6 +170,5 @@ documentation, are tested as rftuf's behavior:
   `target_search::reports_delegated_metadata_that_cannot_be_downloaded_or_validated`.
 - The mirrors role and multiple repositories (TAP 4) are not supported.
 
-[cargo-mutants]: https://mutants.rs
 [snapbox]: https://docs.rs/snapbox
 [tuf-conformance]: https://github.com/theupdateframework/tuf-conformance

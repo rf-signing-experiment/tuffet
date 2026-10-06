@@ -60,4 +60,10 @@ mod tests {
             assert_eq!(relative_path(path), None, "{path:?}");
         }
     }
+
+    #[test]
+    fn colons_are_only_rejected_on_windows() {
+        assert_eq!(file_name("a:b").is_some(), !cfg!(windows));
+        assert_eq!(relative_path("dir/c:file").is_some(), !cfg!(windows));
+    }
 }

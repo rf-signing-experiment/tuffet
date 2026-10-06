@@ -105,4 +105,12 @@ fn reports_files_that_cannot_be_read() {
         stream.map_ok(|chunk| chunk.to_vec()).try_concat().await
     });
     assert_err!(result, TransportError::Other { path, .. } if path == "sub");
+
+    // A path that goes through a file cannot be opened.
+    if cfg!(unix) {
+        assert_err!(
+            block_on(transport.fetch_target("sub/file.bin/inside")),
+            TransportError::Other { .. }
+        );
+    }
 }

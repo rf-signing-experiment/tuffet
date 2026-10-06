@@ -9,8 +9,8 @@ use rftuf::metadata::{Metadata, Role, RoleType, Root, Snapshot, Targets, Timesta
 use serde_json::{Value, json};
 
 use crate::python_tuf_document;
-use crate::support::far_future;
 use crate::support::keys::{key, key_id};
+use crate::support::{data, far_future};
 
 /// Decodes `document` as metadata of role `T`, encodes it again, and returns
 /// the result as JSON.
@@ -56,10 +56,11 @@ fn unrecognized_fields_are_covered_by_signatures() {
 }
 
 /// Fields rftuf does not know survive decoding and encoding, at every level
-/// of every role's metadata.
+/// of every role's metadata, from the outer object (4.2.1) inwards.
 #[test]
 fn unrecognized_fields_are_preserved_when_reencoding() {
     let mut root = python_tuf_document("root.json");
+    root["x-envelope"] = json!({"comment": "outside of signed"});
     root["signatures"][0]["x-signature"] = json!(1);
     let signed = &mut root["signed"];
     signed["x-root"] = json!({"nested": [1, 2]});
@@ -74,16 +75,19 @@ fn unrecognized_fields_are_preserved_when_reencoding() {
     assert_eq!(reencode::<Root>(&root), root);
 
     let mut timestamp = python_tuf_document("timestamp.json");
+    timestamp["x-envelope"] = json!(0);
     timestamp["signed"]["x-timestamp"] = json!(1);
     timestamp["signed"]["meta"]["snapshot.json"]["x-meta"] = json!(2);
     assert_eq!(reencode::<Timestamp>(&timestamp), timestamp);
 
     let mut snapshot = python_tuf_document("snapshot.json");
+    snapshot["x-envelope"] = json!(0);
     snapshot["signed"]["x-snapshot"] = json!(1);
     snapshot["signed"]["meta"]["targets.json"]["x-meta"] = json!(2);
     assert_eq!(reencode::<Snapshot>(&snapshot), snapshot);
 
     let mut targets = python_tuf_document("targets.json");
+    targets["x-envelope"] = json!(0);
     let signed = &mut targets["signed"];
     signed["x-targets"] = json!(1);
     signed["targets"]["file2.txt"]["x-target"] = json!(2);
@@ -97,14 +101,25 @@ fn unrecognized_fields_are_preserved_when_reencoding() {
     assert_eq!(reencode::<Targets>(&targets), targets);
 }
 
-/// Known deviation: fields of the outer object, next to "signed" and
-/// "signatures", are dropped when metadata is encoded again. They are not
-/// signed, and the updater persists metadata exactly as downloaded, so this
-/// only affects tools that re-encode metadata.
+/// 4.2.1: signatures cover ROLE (`signed`) only, so the fields of the outer
+/// object are not signed. They are kept, but changing them leaves the
+/// signatures valid, so they must not be trusted.
 #[test]
-#[ignore = "known deviation: unrecognized fields of the outer object are not preserved"]
-fn unrecognized_fields_of_the_outer_object_are_preserved_when_reencoding() {
-    let mut timestamp = python_tuf_document("timestamp.json");
-    timestamp["x-envelope"] = json!(1);
-    assert_eq!(reencode::<Timestamp>(&timestamp), timestamp);
+fn unrecognized_fields_of_the_outer_object_are_not_signed() {
+    let root = Metadata::<Root>::from_bytes(&data::python_tuf("root.json")).unwrap();
+    let mut document = python_tuf_document("timestamp.json");
+    document["x-envelope"] = json!({"added": "in transit"});
+    let timestamp =
+        Metadata::<Timestamp>::from_bytes(&serde_json::to_vec(&document).unwrap()).unwrap();
+    assert_eq!(
+        timestamp.unrecognized_fields()["x-envelope"],
+        json!({"added": "in transit"})
+    );
+    root.signed().verify_role(&timestamp).unwrap();
+
+    let mut without = timestamp.clone();
+    without.unrecognized_fields_mut().clear();
+    root.signed().verify_role(&without).unwrap();
+    let reencoded: Value = serde_json::from_slice(&without.to_bytes().unwrap()).unwrap();
+    assert_eq!(reencoded.get("x-envelope"), None);
 }

@@ -75,7 +75,10 @@ fn parse_public_key(
 
 pub(super) fn rsa_modulus_bits(public_key: &[u8]) -> Result<usize, CryptoError> {
     let key = rsa::PublicKey::from_der(public_key).map_err(invalid_public_key)?;
-    Ok(key.modulus_len() * 8)
+    let modulus = key.modulus();
+    let modulus = modulus.big_endian_without_leading_zero();
+    let leading_zero_bits = modulus.first().map_or(0, |first| first.leading_zeros());
+    Ok(modulus.len() * 8 - leading_zero_bits as usize)
 }
 
 pub(super) enum SigningKey {
