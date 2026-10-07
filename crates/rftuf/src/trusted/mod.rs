@@ -72,6 +72,7 @@ impl<P: Pouf> TrustedMetadata<P> {
     /// Like [`new`](Self::new), for root metadata that is already decoded.
     pub fn from_root(root: Metadata<Root, P>, reference_time: jiff::Timestamp) -> Result<Self> {
         root.signed().verify_role(&root)?;
+        tracing::debug!(version = root.signed().version, "loaded trusted root");
         Ok(TrustedMetadata {
             reference_time,
             root,
@@ -175,6 +176,7 @@ impl<P: Pouf> TrustedMetadata<P> {
             });
         }
         self.root = new_root;
+        tracing::debug!(version = new_version, "updated root");
         Ok(&self.root)
     }
 
@@ -225,6 +227,7 @@ impl<P: Pouf> TrustedMetadata<P> {
             if new_version == trusted_version {
                 // Keep the trusted copy, but only if it is still valid.
                 self.check_expiry(RoleType::Timestamp.as_str(), trusted)?;
+                tracing::debug!(version = trusted_version, "timestamp is unchanged");
                 return Ok(TimestampUpdate::Unchanged);
             }
             let trusted_snapshot = Self::snapshot_meta_of(trusted).version;
@@ -238,6 +241,10 @@ impl<P: Pouf> TrustedMetadata<P> {
             }
         }
         self.check_expiry(RoleType::Timestamp.as_str(), &new_timestamp)?;
+        tracing::debug!(
+            version = new_timestamp.signed().version,
+            "updated timestamp"
+        );
         self.timestamp = Some(new_timestamp);
         Ok(TimestampUpdate::Updated)
     }
@@ -295,6 +302,7 @@ impl<P: Pouf> TrustedMetadata<P> {
             }
         }
         self.check_expiry(RoleType::Snapshot.as_str(), &new_snapshot)?;
+        tracing::debug!(version = new_snapshot.signed().version, "updated snapshot");
         self.snapshot = Some(new_snapshot);
         Ok(())
     }
@@ -337,6 +345,11 @@ impl<P: Pouf> TrustedMetadata<P> {
         check_version(role, expected_version, new_targets.signed().version)?;
         self.check_expiry(role, &new_targets)?;
 
+        tracing::debug!(
+            role,
+            version = new_targets.signed().version,
+            "updated targets"
+        );
         self.targets.insert(role.to_owned(), new_targets);
         Ok(&self.targets[role])
     }

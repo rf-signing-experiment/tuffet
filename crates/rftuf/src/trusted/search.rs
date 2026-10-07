@@ -113,6 +113,9 @@ impl TargetSearch {
     /// role's verified metadata to [`visit`](Self::visit).
     pub fn next_step(&mut self) -> Option<SearchStep> {
         if self.remaining == 0 {
+            if !self.pending.is_empty() {
+                tracing::debug!("stopped searching after visiting the maximum number of roles");
+            }
             return None;
         }
         let mut step = self.pending.pop()?;
@@ -128,6 +131,7 @@ impl TargetSearch {
     /// for the path.
     pub fn visit(&mut self, step: &SearchStep, metadata: &Targets) -> Option<TargetInfo> {
         if let Some(file) = metadata.targets.get(&self.path) {
+            tracing::debug!(role = step.role, "found target");
             return Some(TargetInfo {
                 path: self.path.clone(),
                 role: step.role.clone(),
@@ -142,6 +146,12 @@ impl TargetSearch {
         };
         let mut children = Vec::new();
         for delegated in delegations.roles_for_target(&self.path) {
+            tracing::trace!(
+                role = delegated.name,
+                delegator = step.role,
+                terminating = delegated.terminating,
+                "queued delegation"
+            );
             children.push(SearchStep {
                 role: delegated.name.clone(),
                 delegator: step.role.clone(),

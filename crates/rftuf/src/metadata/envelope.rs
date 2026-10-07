@@ -193,7 +193,7 @@ impl<T: Role, P: Pouf> Metadata<T, P> {
                 Ok(()) => {
                     counted.insert(material);
                 }
-                Err(error) => log::debug!("ignoring signature on {role} by key {keyid}: {error}"),
+                Err(error) => tracing::debug!(role, %keyid, %error, "ignoring signature"),
             }
         }
         let valid = counted.len() as u64;

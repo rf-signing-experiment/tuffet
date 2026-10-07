@@ -59,14 +59,8 @@
 //!
 //! # Key IDs
 //!
-//! The specification requires clients to check that every key ID is the hash
-//! of its key. Like the reference implementation (python-tuf) and go-tuf,
-//! this crate does not: widely deployed repositories, Sigstore's among them,
-//! list keys under IDs that were assigned before fields were added to the
-//! keys. What the check protects against, one key counting several times
-//! towards a signature threshold, is prevented directly instead: thresholds
-//! count distinct keys, compared by key material, and each role's signatures
-//! are only checked against the keys its delegating role lists.
+//! This client follows TAP 12 - allowing the repository to define the Key ID
+//! rather than requiring it to be a SHA256 hash of the canonical key metadata. 
 
 #![forbid(unsafe_code)]
 

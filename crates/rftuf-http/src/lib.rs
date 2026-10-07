@@ -78,6 +78,8 @@ impl HttpTransport {
             .send()
             .await
             .map_err(|error| TransportError::other(name, error))?;
+        // `NotFound` below does not say whether the status was 403 or 404.
+        tracing::debug!(url = %response.url(), status = %response.status(), "received response");
         if matches!(
             response.status(),
             StatusCode::NOT_FOUND | StatusCode::FORBIDDEN

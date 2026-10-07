@@ -17,9 +17,9 @@ aws-lc-rs = ["rftuf/aws-lc-rs", "rftuf-http/aws-lc-rs"]
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
-env_logger = "0.11"
-log = "0.4"
 percent-encoding = "2"
 rftuf.workspace = true
 rftuf-http.workspace = true
 tokio = { version = "1", features = ["macros", "rt"] }
+tracing.workspace = true
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

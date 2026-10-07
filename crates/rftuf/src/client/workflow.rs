@@ -54,7 +54,7 @@ impl<T: Transport, S: MetadataStore> Workflow<T, S> {
             && let Some(next) = self.load(&format!("{version}.{root_name}"))?
         {
             if let Err(error) = trusted.update_root(&next) {
-                log::warn!("ignoring version {version} of {root_name} in local storage: {error}");
+                tracing::warn!(version, %error, "ignoring root metadata in local storage");
                 break;
             }
             data = next;
@@ -81,14 +81,14 @@ impl<T: Transport, S: MetadataStore> Workflow<T, S> {
         let root_name = P::file_name(RoleType::Root.as_str());
         for _ in 0..self.config.max_root_rotations {
             let Some(next_version) = trusted.root().signed().version.checked_add(1) else {
-                break;
+                return Ok(());
             };
             let name = format!("{next_version}.{root_name}");
             let data = match self
                 .fetch_metadata(&name, self.config.root_max_length)
                 .await
             {
-                Err(Error::Transport(TransportError::NotFound(_))) => break,
+                Err(Error::Transport(TransportError::NotFound(_))) => return Ok(()),
                 result => result?,
             };
             let old_roles = trusted.root().signed().roles.clone();
@@ -100,12 +100,20 @@ impl<T: Transport, S: MetadataStore> Workflow<T, S> {
             // (recovery from a fast-forward attack). Do it before persisting
             // the new root, from which the next update starts.
             if roles.timestamp != old_roles.timestamp || roles.snapshot != old_roles.snapshot {
+                tracing::debug!(
+                    "timestamp or snapshot keys changed; removing their cached metadata"
+                );
                 self.remove(&P::file_name(RoleType::Timestamp.as_str()))?;
                 self.remove(&P::file_name(RoleType::Snapshot.as_str()))?;
             }
             self.persist(&name, &data)?;
             self.persist(&root_name, &data)?;
         }
+        // Not an error: the next refresh continues from the last new root.
+        tracing::debug!(
+            max_root_rotations = self.config.max_root_rotations,
+            "stopped updating root after the maximum number of new versions"
+        );
         Ok(())
     }
 
@@ -115,7 +123,7 @@ impl<T: Transport, S: MetadataStore> Workflow<T, S> {
         if let Some(cached) = self.load(&name)?
             && let Err(error) = trusted.load_cached_timestamp(&cached)
         {
-            log::debug!("ignoring cached {name}: {error}");
+            tracing::debug!(name, %error, "ignoring cached metadata");
         }
         let data = self
             .fetch_metadata(&name, self.config.timestamp_max_length)
@@ -131,9 +139,12 @@ impl<T: Transport, S: MetadataStore> Workflow<T, S> {
         let name = P::file_name(RoleType::Snapshot.as_str());
         if let Some(cached) = self.load(&name)? {
             match trusted.load_cached_snapshot(&cached) {
-                Ok(true) => return Ok(()),
+                Ok(true) => {
+                    tracing::debug!(name, "using cached metadata");
+                    return Ok(());
+                }
                 Ok(false) => {}
-                Err(error) => log::debug!("ignoring cached {name}: {error}"),
+                Err(error) => tracing::debug!(name, %error, "ignoring cached metadata"),
             }
         }
         let meta = trusted
@@ -174,8 +185,11 @@ impl<T: Transport, S: MetadataStore> Workflow<T, S> {
         let name = P::file_name(&utf8_percent_encode(role, ROLE_NAME).to_string());
         if let Some(cached) = self.load(&name)? {
             match trusted.update_delegated_targets(&cached, role, delegator) {
-                Ok(_) => return Ok(()),
-                Err(error) => log::debug!("ignoring cached {name}: {error}"),
+                Ok(_) => {
+                    tracing::debug!(name, "using cached metadata");
+                    return Ok(());
+                }
+                Err(error) => tracing::debug!(name, %error, "ignoring cached metadata"),
             }
         }
         let meta = trusted
@@ -190,6 +204,7 @@ impl<T: Transport, S: MetadataStore> Workflow<T, S> {
 
     /// 5.7: downloads a target, feeding verified-so-far chunks to `sink`.
     /// The data must not be used unless this returns `Ok`.
+    #[tracing::instrument(skip_all, fields(path = target.path))]
     pub(super) async fn download_target<P: Pouf>(
         &self,
         root: &Metadata<Root, P>,
@@ -211,11 +226,13 @@ impl<T: Transport, S: MetadataStore> Workflow<T, S> {
             } else {
                 target.path.clone()
             };
+        tracing::debug!(remote_path, "fetching target");
         let stream = self.transport.fetch_target(&remote_path).await?;
         drain(stream, verifier, sink).await
     }
 
     async fn fetch_metadata(&self, name: &str, max_length: u64) -> Result<Vec<u8>> {
+        tracing::debug!(name, "fetching metadata");
         let stream = self.transport.fetch_metadata(name).await?;
         let mut data = Vec::new();
         drain(stream, FileVerifier::new(name, max_length), |chunk| {

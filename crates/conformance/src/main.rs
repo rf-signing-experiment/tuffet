@@ -9,7 +9,7 @@
 #![forbid(unsafe_code)]
 
 use std::error::Error;
-use std::io;
+use std::io::{self, IsTerminal};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Duration;
@@ -19,6 +19,7 @@ use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use rftuf::Updater;
 use rftuf::store::{FilesystemStore, MetadataStore};
 use rftuf_http::{HttpTransport, Url, reqwest};
+use tracing_subscriber::EnvFilter;
 
 type Result<T, E = Box<dyn Error>> = std::result::Result<T, E>;
 
@@ -59,7 +60,13 @@ enum Command {
 }
 
 fn main() -> ExitCode {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info,rftuf=debug"))
+    let filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,rftuf=debug"));
+    tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_writer(io::stderr)
+        // The test suite captures the output.
+        .with_ansi(io::stderr().is_terminal())
         .init();
     match run(Cli::parse()) {
         Ok(()) => ExitCode::SUCCESS,
@@ -103,7 +110,7 @@ async fn run(cli: Cli) -> Result<()> {
                     .ok_or_else(|| format!("no trusted target {name:?}"))?;
                 let path = target_dir.join(utf8_percent_encode(name, FILE_NAME).to_string());
                 if target.matches_file(&path)? {
-                    log::info!("{name} is already downloaded");
+                    tracing::info!(name, "target is already downloaded");
                 } else {
                     updater.download_target_to(&target, &path).await?;
                 }

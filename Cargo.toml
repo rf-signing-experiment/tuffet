@@ -3,7 +3,7 @@ members = ["crates/rftuf", "crates/rftuf-http", "crates/conformance"]
 resolver = "3"
 
 [workspace.package]
-repository = "https://github.com/arlosi/rftuf"
+repository = "https://github.com/rf-signing-experiment/rftuf"
 license = "MIT OR Apache-2.0"
 edition = "2024"
 rust-version = "1.88"
@@ -18,3 +18,4 @@ bytes = "1"
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 futures-executor = "0.3"
 tempfile = "3"
+tracing = "0.1"

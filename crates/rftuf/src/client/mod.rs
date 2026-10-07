@@ -125,6 +125,7 @@ impl<T: Transport, S: MetadataStore, P: Pouf> Updater<T, S, P> {
     /// On error the updater trusts no metadata other than root until the
     /// next successful refresh. New root versions accepted before the error
     /// remain trusted.
+    #[tracing::instrument(name = "refresh", skip_all)]
     pub async fn refresh_at(&mut self, reference_time: jiff::Timestamp) -> Result<()> {
         self.trusted = None;
         let mut trusted = TrustedMetadata::from_root(self.root.clone(), reference_time)?;
@@ -139,6 +140,7 @@ impl<T: Transport, S: MetadataStore, P: Pouf> Updater<T, S, P> {
     /// Refreshes first if there is no trusted metadata.
     ///
     /// Returns `None` if no trusted role lists the target.
+    #[tracing::instrument(skip(self))]
     pub async fn get_target_info(&mut self, path: &str) -> Result<Option<TargetInfo>> {
         if self.trusted.is_none() {
             self.refresh().await?;
