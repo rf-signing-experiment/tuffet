@@ -13,8 +13,7 @@ workspace = true
 
 [features]
 default = ["rustcrypto"]
-# Cryptography backends; see `src/crypto/mod.rs`. At least one must be enabled.
-# `aws-lc-rs` takes precedence if both are.
+# Cryptography backends: `aws-lc-rs` takes precedence if both are enabled.
 rustcrypto = ["dep:sha2", "dep:ed25519-dalek", "dep:p256", "dep:p384", "dep:rsa", "dep:getrandom", "dep:rand_core", "dep:ml-dsa"]
 aws-lc-rs = ["dep:aws-lc-rs"]
 
@@ -44,9 +43,8 @@ p256 = { version = "0.14", optional = true, default-features = false, features =
 p384 = { version = "0.14", optional = true, default-features = false, features = ["ecdsa", "pem", "std"] }
 rand_core = { version = "0.10", optional = true }
 # Pinned: 0.10 is still a release candidate, but it is the only release line
-# with constant-time arithmetic (RUSTSEC-2023-0071) and PSS salt-length
-# auto-detection, which other TUF implementations rely on.
-rsa = { version = "=0.10.0-rc.18", optional = true }
+# with constant-time arithmetic (RUSTSEC-2023-0071).
+rsa = { version = "=0.10.0-rc.19", optional = true }
 sha2 = { version = "0.11", optional = true }
 
 [dev-dependencies]

@@ -60,7 +60,7 @@
 //! # Key IDs
 //!
 //! This client follows TAP 12 - allowing the repository to define the Key ID
-//! rather than requiring it to be a SHA256 hash of the canonical key metadata. 
+//! rather than requiring it to be a SHA256 hash of the canonical key metadata.
 
 #![forbid(unsafe_code)]
 
