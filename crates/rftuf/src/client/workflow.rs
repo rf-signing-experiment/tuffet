@@ -9,6 +9,7 @@ use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use super::UpdaterConfig;
 use crate::error::{Error, Result};
 use crate::metadata::{FileVerifier, Metadata, RoleType, Root, Targets};
+use crate::paths;
 use crate::pouf::Pouf;
 use crate::store::MetadataStore;
 use crate::transport::{ByteStream, Transport, TransportError};
@@ -88,7 +89,7 @@ impl<T: Transport, S: MetadataStore> Workflow<T, S> {
                 .fetch_metadata(&name, self.config.root_max_length)
                 .await
             {
-                Err(Error::Transport(TransportError::NotFound(_))) => return Ok(()),
+                Err(Error::MetadataNotFound(_)) => return Ok(()),
                 result => result?,
             };
             let old_roles = trusted.root().signed().roles.clone();
@@ -212,6 +213,11 @@ impl<T: Transport, S: MetadataStore> Workflow<T, S> {
         sink: impl FnMut(&[u8]) -> io::Result<()>,
     ) -> Result<()> {
         let verifier = FileVerifier::for_target(&target.path, &target.file)?;
+        // Whatever the transport, the path must be a relative file path. The
+        // hash prefix below cannot make it unsafe.
+        if paths::relative_path(&target.path).is_none() {
+            return Err(Error::UnsafePath(target.path.clone()));
+        }
         let remote_path =
             if root.signed().uses_consistent_snapshots() && self.config.prefix_targets_with_hash {
                 let digest = target
@@ -227,15 +233,28 @@ impl<T: Transport, S: MetadataStore> Workflow<T, S> {
                 target.path.clone()
             };
         tracing::debug!(remote_path, "fetching target");
-        let stream = self.transport.fetch_target(&remote_path).await?;
+        let fetched = self
+            .transport
+            .fetch_target(&remote_path, target.file.length)
+            .await;
+        let stream = match fetched {
+            Err(TransportError::NotFound) => {
+                return Err(Error::TargetNotFound(target.path.clone()));
+            }
+            result => result.map_err(|error| verifier.fetch_error(error))?,
+        };
         drain(stream, verifier, sink).await
     }
 
     async fn fetch_metadata(&self, name: &str, max_length: u64) -> Result<Vec<u8>> {
         tracing::debug!(name, "fetching metadata");
-        let stream = self.transport.fetch_metadata(name).await?;
+        let verifier = FileVerifier::new(name, max_length);
+        let stream = match self.transport.fetch_metadata(name, max_length).await {
+            Err(TransportError::NotFound) => return Err(Error::MetadataNotFound(name.to_owned())),
+            result => result.map_err(|error| verifier.fetch_error(error))?,
+        };
         let mut data = Vec::new();
-        drain(stream, FileVerifier::new(name, max_length), |chunk| {
+        drain(stream, verifier, |chunk| {
             data.extend_from_slice(chunk);
             Ok(())
         })
@@ -279,7 +298,7 @@ async fn drain(
     mut sink: impl FnMut(&[u8]) -> io::Result<()>,
 ) -> Result<()> {
     while let Some(chunk) = stream.next().await {
-        let chunk = chunk?;
+        let chunk = chunk.map_err(|error| verifier.fetch_error(error))?;
         verifier.update(&chunk)?;
         sink(&chunk)?;
     }

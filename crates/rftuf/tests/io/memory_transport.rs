@@ -2,14 +2,9 @@
 //! time.
 
 use futures_executor::block_on;
-use futures_util::TryStreamExt;
-use rftuf::transport::{ByteStream, MemoryTransport, Transport, TransportError};
+use rftuf::transport::{MemoryTransport, Transport, TransportError};
 
-use crate::support::assert_err;
-
-fn read(stream: ByteStream) -> Vec<u8> {
-    block_on(stream.map_ok(|chunk| chunk.to_vec()).try_concat()).unwrap()
-}
+use crate::support::{assert_err, read};
 
 #[test]
 fn serves_the_files_it_holds() {
@@ -18,28 +13,30 @@ fn serves_the_files_it_holds() {
     transport.insert_metadata("timestamp.json", b"two".to_vec());
     transport.insert_target("dir/file", b"target".to_vec());
     assert_eq!(
-        read(block_on(transport.fetch_metadata("timestamp.json")).unwrap()),
+        read(block_on(
+            transport.fetch_metadata("timestamp.json", u64::MAX)
+        )),
         b"two"
     );
     assert_eq!(
-        read(block_on(transport.fetch_target("dir/file")).unwrap()),
+        read(block_on(transport.fetch_target("dir/file", u64::MAX))),
         b"target"
     );
 
     // Metadata and targets are separate.
     assert_err!(
-        block_on(transport.fetch_target("timestamp.json")),
-        TransportError::NotFound(_)
+        block_on(transport.fetch_target("timestamp.json", u64::MAX)),
+        TransportError::NotFound
     );
 
     transport.remove_metadata("timestamp.json");
     transport.remove_target("dir/file");
     assert_err!(
-        block_on(transport.fetch_metadata("timestamp.json")),
-        TransportError::NotFound(name) if name == "timestamp.json"
+        block_on(transport.fetch_metadata("timestamp.json", u64::MAX)),
+        TransportError::NotFound
     );
     assert_err!(
-        block_on(transport.fetch_target("dir/file")),
-        TransportError::NotFound(name) if name == "dir/file"
+        block_on(transport.fetch_target("dir/file", u64::MAX)),
+        TransportError::NotFound
     );
 }

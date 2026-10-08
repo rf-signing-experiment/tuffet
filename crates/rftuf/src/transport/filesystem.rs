@@ -32,25 +32,32 @@ impl FilesystemTransport {
 }
 
 impl Transport for FilesystemTransport {
-    async fn fetch_metadata(&self, name: &str) -> Result<ByteStream, TransportError> {
+    async fn fetch_metadata(
+        &self,
+        name: &str,
+        _max_length: u64,
+    ) -> Result<ByteStream, TransportError> {
         let file_name = paths::file_name(name)
-            .ok_or_else(|| TransportError::other(name, "invalid metadata file name"))?;
-        open(&self.metadata_dir.join(file_name), name)
+            .ok_or_else(|| TransportError::other("invalid metadata file name"))?;
+        open(&self.metadata_dir.join(file_name))
     }
 
-    async fn fetch_target(&self, path: &str) -> Result<ByteStream, TransportError> {
+    async fn fetch_target(
+        &self,
+        path: &str,
+        _max_length: u64,
+    ) -> Result<ByteStream, TransportError> {
         let relative = paths::relative_path(path)
-            .ok_or_else(|| TransportError::other(path, "unsafe target path"))?;
-        open(&self.targets_dir.join(relative), path)
+            .ok_or_else(|| TransportError::other("unsafe target path"))?;
+        open(&self.targets_dir.join(relative))
     }
 }
 
-fn open(path: &Path, name: &str) -> Result<ByteStream, TransportError> {
+fn open(path: &Path) -> Result<ByteStream, TransportError> {
     let mut file = Some(File::open(path).map_err(|error| match error.kind() {
-        io::ErrorKind::NotFound => TransportError::NotFound(name.to_owned()),
-        _ => TransportError::other(name, error),
+        io::ErrorKind::NotFound => TransportError::NotFound,
+        _ => TransportError::other(error),
     })?);
-    let name = name.to_owned();
     let chunks = std::iter::from_fn(move || {
         let mut chunk = vec![0; CHUNK_SIZE];
         let result = loop {
@@ -70,7 +77,7 @@ fn open(path: &Path, name: &str) -> Result<ByteStream, TransportError> {
             }
             Err(error) => {
                 file = None;
-                Some(Err(TransportError::other(name.clone(), error)))
+                Some(Err(TransportError::other(error)))
             }
         }
     });

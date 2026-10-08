@@ -10,7 +10,6 @@ use std::collections::HashMap;
 
 use rftuf::crypto::HashAlgorithm;
 use rftuf::metadata::{DelegatedRole, Delegations, TargetFile, Targets};
-use rftuf::transport::TransportError;
 use rftuf::trusted::TargetSearch;
 use rftuf::{Error, UpdaterConfig};
 
@@ -374,7 +373,7 @@ fn reports_delegated_metadata_that_cannot_be_downloaded_or_validated() {
     client.refresh().unwrap();
     assert_err!(
         client.get_target_info("file"),
-        Error::Transport(TransportError::NotFound(name)) if name == "a.json"
+        Error::MetadataNotFound(name) if name == "a.json"
     );
 
     let signed_by_another_key = repo.sign("targets", &repo.targets["a"]);

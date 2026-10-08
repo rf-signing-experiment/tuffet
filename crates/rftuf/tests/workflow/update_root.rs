@@ -8,7 +8,6 @@
 use rftuf::crypto::Signer;
 use rftuf::metadata::{MetaFile, RoleKeys, RoleType};
 use rftuf::store::MetadataStore;
-use rftuf::transport::TransportError;
 use rftuf::{Error, UpdaterConfig};
 
 use crate::support::keys::{key, key_id};
@@ -83,7 +82,8 @@ fn a_failed_root_download_aborts_the_update() {
     let mut client = repo.client();
     assert_err!(
         client.refresh(),
-        Error::Transport(TransportError::Other { path, .. }) if path == "2.root.json"
+        Error::Transport { name, source }
+            if name == "2.root.json" && source.to_string() == "simulated network failure"
     );
     assert_eq!(client.root_version(), 1);
 }
@@ -338,10 +338,7 @@ fn rotating_timestamp_or_snapshot_keys_deletes_their_trusted_metadata() {
         repo.publish_root();
         // End the update right after it has updated root.
         repo.remove("timestamp.json");
-        assert_err!(
-            client.refresh(),
-            Error::Transport(TransportError::NotFound(_))
-        );
+        assert_err!(client.refresh(), Error::MetadataNotFound(name) if name == "timestamp.json");
 
         assert_eq!(client.stored("root.json"), Some(repo.file("2.root.json")));
         assert_eq!(client.stored("timestamp.json"), None, "{role}");

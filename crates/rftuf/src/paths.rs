@@ -22,9 +22,8 @@ fn is_safe_component(name: &str) -> bool {
     !name.is_empty()
         && name != "."
         && name != ".."
-        && !name.contains(['/', '\\', '\0'])
-        // Reject drive prefixes and alternate data streams on Windows.
-        && !(cfg!(windows) && name.contains(':'))
+        // `:` starts drive prefixes and alternate data streams on Windows.
+        && !name.contains(['/', '\\', '\0', ':'])
 }
 
 #[cfg(test)]
@@ -44,7 +43,7 @@ mod tests {
 
     #[test]
     fn rejects_escaping_names() {
-        for name in ["", ".", "..", "a/b", "a\\b", "nul\0"] {
+        for name in ["", ".", "..", "a/b", "a\\b", "nul\0", "a:b"] {
             assert_eq!(file_name(name), None, "{name:?}");
         }
         for path in [
@@ -56,14 +55,9 @@ mod tests {
             "a/",
             "./a",
             "a\\..\\b",
+            "dir/c:file",
         ] {
             assert_eq!(relative_path(path), None, "{path:?}");
         }
-    }
-
-    #[test]
-    fn colons_are_only_rejected_on_windows() {
-        assert_eq!(file_name("a:b").is_some(), !cfg!(windows));
-        assert_eq!(relative_path("dir/c:file").is_some(), !cfg!(windows));
     }
 }

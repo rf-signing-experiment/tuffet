@@ -22,10 +22,9 @@ pub type ByteStream = Pin<Box<dyn Stream<Item = Result<Bytes, TransportError>> +
 
 /// Fetches metadata and target files from a TUF repository.
 ///
-/// Implementations only move bytes. The caller enforces size limits and
-/// verifies content while it reads the returned stream, so return the body as
-/// it arrives rather than buffering it: that lets oversized responses be cut
-/// off early.
+/// The `max_length` parameter is a hint to indicate the max number of bytes
+/// to read. If the file is larger than `max_length`, the transport MAY reject
+/// it as [`TransportError::TooLarge`].
 pub trait Transport: Send + Sync {
     /// Fetches a metadata file, such as `timestamp.json` or `3.root.json`,
     /// from the repository's metadata location.
@@ -36,17 +35,20 @@ pub trait Transport: Send + Sync {
     fn fetch_metadata(
         &self,
         name: &str,
+        max_length: u64,
     ) -> impl Future<Output = Result<ByteStream, TransportError>> + Send;
 
-    /// Fetches a target file from the repository's targets location.
+    /// Fetches a target file from below the repository's targets location.
     ///
-    /// `path` comes from signed metadata. It is `/`-separated but otherwise
-    /// arbitrary: implementations must encode it as needed (for example by
-    /// percent-encoding each URL path segment) and must not let it escape the
-    /// targets location.
+    /// `path` comes from signed metadata. It is `/`-separated, and its
+    /// segments are never empty, `.` or `..` and never contain `\`, `:` or
+    /// NUL, but it is otherwise arbitrary: implementations must encode each
+    /// segment as needed (for example by percent-encoding it in a URL), so
+    /// that characters like `?`, `#` and `%` cannot change its meaning.
     fn fetch_target(
         &self,
         path: &str,
+        max_length: u64,
     ) -> impl Future<Output = Result<ByteStream, TransportError>> + Send;
 }
 
@@ -59,27 +61,22 @@ pub enum TransportError {
     /// The updater relies on this to detect the end of the chain of root
     /// metadata versions, so report "not found" responses (such as HTTP 404
     /// or 403) this way.
-    #[error("{0} not found")]
-    NotFound(String),
+    #[error("the file does not exist")]
+    NotFound,
 
-    /// Any other failure.
-    #[error("failed to fetch {path}")]
-    Other {
-        path: String,
-        #[source]
-        source: Box<dyn StdError + Send + Sync>,
-    },
+    /// The file is longer than the `max_length` the caller accepts.
+    #[error("the file exceeds the maximum length")]
+    TooLarge,
+
+    /// Any other failure, such as a network error or an unexpected HTTP
+    /// status.
+    #[error(transparent)]
+    Other(Box<dyn StdError + Send + Sync>),
 }
 
 impl TransportError {
-    pub fn other(
-        path: impl Into<String>,
-        source: impl Into<Box<dyn StdError + Send + Sync>>,
-    ) -> Self {
-        TransportError::Other {
-            path: path.into(),
-            source: source.into(),
-        }
+    pub fn other(source: impl Into<Box<dyn StdError + Send + Sync>>) -> Self {
+        TransportError::Other(source.into())
     }
 }
 
@@ -87,15 +84,17 @@ impl<T: Transport> Transport for &T {
     fn fetch_metadata(
         &self,
         name: &str,
+        max_length: u64,
     ) -> impl Future<Output = Result<ByteStream, TransportError>> + Send {
-        (**self).fetch_metadata(name)
+        (**self).fetch_metadata(name, max_length)
     }
 
     fn fetch_target(
         &self,
         path: &str,
+        max_length: u64,
     ) -> impl Future<Output = Result<ByteStream, TransportError>> + Send {
-        (**self).fetch_target(path)
+        (**self).fetch_target(path, max_length)
     }
 }
 
@@ -103,14 +102,16 @@ impl<T: Transport> Transport for Arc<T> {
     fn fetch_metadata(
         &self,
         name: &str,
+        max_length: u64,
     ) -> impl Future<Output = Result<ByteStream, TransportError>> + Send {
-        (**self).fetch_metadata(name)
+        (**self).fetch_metadata(name, max_length)
     }
 
     fn fetch_target(
         &self,
         path: &str,
+        max_length: u64,
     ) -> impl Future<Output = Result<ByteStream, TransportError>> + Send {
-        (**self).fetch_target(path)
+        (**self).fetch_target(path, max_length)
     }
 }

@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use super::{HexBytes, MetaFile, TargetFile};
 use crate::crypto::{HashAlgorithm, Hasher};
 use crate::error::{Error, Result};
+use crate::transport::TransportError;
 
 /// A `HASHES` object: digests of a file, keyed by hash algorithm name.
 ///
@@ -168,5 +169,26 @@ impl FileVerifier {
     pub fn verify(mut self, data: &[u8]) -> Result<()> {
         self.update(data)?;
         self.finish()
+    }
+
+    /// The error for a transport that failed to fetch the file. A file it
+    /// rejected as too long is reported as [`update`](Self::update) would.
+    ///
+    /// Callers report a file that the transport did not find themselves, as
+    /// missing metadata or a missing target, so "not found" partway through
+    /// the file is a failure like any other.
+    pub(crate) fn fetch_error(&self, error: TransportError) -> Error {
+        let name = self.name.clone();
+        match error {
+            error @ TransportError::NotFound => Error::Transport {
+                name,
+                source: Box::new(error),
+            },
+            TransportError::TooLarge => Error::TooLarge {
+                name,
+                max: self.max_length,
+            },
+            TransportError::Other(source) => Error::Transport { name, source },
+        }
     }
 }

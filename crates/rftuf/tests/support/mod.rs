@@ -22,7 +22,7 @@ use jiff::SignedDuration;
 
 pub use client::Client;
 pub use repo::{Delegation, RepoBuilder, TestRepo};
-pub use transport::RecordingTransport;
+pub use transport::{RecordingTransport, read};
 
 /// The fixed update start time (5.1) of the tests.
 pub fn now() -> jiff::Timestamp {

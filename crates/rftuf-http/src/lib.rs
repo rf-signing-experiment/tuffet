@@ -71,57 +71,65 @@ impl HttpTransport {
         }
     }
 
-    async fn get(&self, url: Url, name: &str) -> Result<ByteStream, TransportError> {
+    async fn get(&self, url: Url, max_length: u64) -> Result<ByteStream, TransportError> {
         let response = self
             .client
             .get(url)
             .send()
             .await
-            .map_err(|error| TransportError::other(name, error))?;
+            .map_err(TransportError::other)?;
         // `NotFound` below does not say whether the status was 403 or 404.
         tracing::debug!(url = %response.url(), status = %response.status(), "received response");
         if matches!(
             response.status(),
             StatusCode::NOT_FOUND | StatusCode::FORBIDDEN
         ) {
-            return Err(TransportError::NotFound(name.to_owned()));
+            return Err(TransportError::NotFound);
         }
-        let response = response
-            .error_for_status()
-            .map_err(|error| TransportError::other(name, error))?;
+        let response = response.error_for_status().map_err(TransportError::other)?;
+        if let Some(length) = response.content_length()
+            && length > max_length
+        {
+            return Err(TransportError::TooLarge);
+        }
 
-        let name = name.to_owned();
         let body = stream::try_unfold(response, |mut response| async move {
-            Ok(response.chunk().await?.map(|chunk| (chunk, response)))
+            Ok::<_, reqwest::Error>(response.chunk().await?.map(|chunk| (chunk, response)))
         })
-        .map_err(move |error: reqwest::Error| TransportError::other(name.clone(), error));
+        .map_err(TransportError::other);
         Ok(body.boxed())
     }
 }
 
 impl Transport for HttpTransport {
-    async fn fetch_metadata(&self, name: &str) -> Result<ByteStream, TransportError> {
-        let url = metadata_url(&self.metadata_url, name)
-            .map_err(|reason| TransportError::other(name, reason))?;
-        self.get(url, name).await
+    async fn fetch_metadata(
+        &self,
+        name: &str,
+        max_length: u64,
+    ) -> Result<ByteStream, TransportError> {
+        let url = metadata_url(&self.metadata_url, name)?;
+        self.get(url, max_length).await
     }
 
-    async fn fetch_target(&self, path: &str) -> Result<ByteStream, TransportError> {
-        let url = target_url(&self.targets_url, path)
-            .map_err(|reason| TransportError::other(path, reason))?;
-        self.get(url, path).await
+    async fn fetch_target(
+        &self,
+        path: &str,
+        max_length: u64,
+    ) -> Result<ByteStream, TransportError> {
+        let url = target_url(&self.targets_url, path)?;
+        self.get(url, max_length).await
     }
 }
 
 /// Appends a metadata file name to `base`. The name is already a single,
 /// percent-encoded path segment (see [`Transport::fetch_metadata`]), so it
 /// is appended as is.
-fn metadata_url(base: &Url, name: &str) -> Result<Url, &'static str> {
+fn metadata_url(base: &Url, name: &str) -> Result<Url, TransportError> {
     if name.is_empty() || name == "." || name == ".." || name.contains(['/', '\\']) {
-        return Err("invalid metadata file name");
+        return Err(TransportError::other("invalid metadata file name"));
     }
     if base.cannot_be_a_base() {
-        return Err("base URL cannot have a path");
+        return Err(cannot_be_a_base());
     }
     let mut url = base.clone();
     url.set_path(&format!("{}/{name}", base.path().trim_end_matches('/')));
@@ -130,20 +138,17 @@ fn metadata_url(base: &Url, name: &str) -> Result<Url, &'static str> {
 
 /// Appends a target path to `base`, percent-encoding each segment so that
 /// characters like `?`, `#` and `%` cannot change the meaning of the URL.
-fn target_url(base: &Url, path: &str) -> Result<Url, &'static str> {
+fn target_url(base: &Url, path: &str) -> Result<Url, TransportError> {
     let mut url = base.clone();
-    let mut segments = url
-        .path_segments_mut()
-        .map_err(|()| "base URL cannot have a path")?;
-    segments.pop_if_empty();
-    for segment in path.split('/') {
-        if segment == "." || segment == ".." {
-            return Err("target path segments must not be `.` or `..`");
-        }
-        segments.push(segment);
-    }
-    drop(segments);
+    url.path_segments_mut()
+        .map_err(|()| cannot_be_a_base())?
+        .pop_if_empty()
+        .extend(path.split('/'));
     Ok(url)
+}
+
+fn cannot_be_a_base() -> TransportError {
+    TransportError::other("base URL cannot have a path")
 }
 
 #[cfg(test)]
@@ -194,8 +199,12 @@ mod tests {
                 .as_str(),
             "https://example.com/targets/a%20b/c%3Fd%23e%25f"
         );
-        assert!(target_url(&url("https://example.com/targets/"), "../secret").is_err());
-        assert!(target_url(&url("https://example.com/targets/"), "a/./b").is_err());
-        assert!(target_url(&url("mailto:someone@example.com"), "x").is_err());
+    }
+
+    #[test]
+    fn requires_base_urls_that_can_have_a_path() {
+        let base = url("mailto:someone@example.com");
+        assert!(metadata_url(&base, "timestamp.json").is_err());
+        assert!(target_url(&base, "x").is_err());
     }
 }

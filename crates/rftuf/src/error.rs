@@ -4,7 +4,6 @@ use std::error::Error as StdError;
 use std::io;
 
 use crate::crypto::CryptoError;
-use crate::transport::TransportError;
 
 /// A specialized `Result` type for this crate.
 pub type Result<T, E = Error> = std::result::Result<T, E>;
@@ -95,7 +94,8 @@ pub enum Error {
     #[error("{name} exceeds the maximum allowed length of {max} bytes")]
     TooLarge { name: String, max: u64 },
 
-    /// A path from metadata cannot be safely used as a local file path.
+    /// A target path from metadata cannot be safely fetched, as it could
+    /// escape the repository's targets location.
     #[error("unsafe path {0:?}")]
     UnsafePath(String),
 
@@ -108,9 +108,23 @@ pub enum Error {
     #[error("invalid state: {0}")]
     InvalidState(&'static str),
 
+    /// Metadata that the update requires, such as `timestamp.json` or the
+    /// metadata of a delegated role, does not exist on the remote repository.
+    #[error("metadata {0} not found")]
+    MetadataNotFound(String),
+
+    /// A target that trusted metadata describes does not exist on the remote
+    /// repository.
+    #[error("target {0} not found")]
+    TargetNotFound(String),
+
     /// Fetching a file from the remote repository failed.
-    #[error(transparent)]
-    Transport(#[from] TransportError),
+    #[error("failed to fetch {name}")]
+    Transport {
+        name: String,
+        #[source]
+        source: Box<dyn StdError + Send + Sync>,
+    },
 
     /// Reading or writing local metadata storage failed.
     #[error("local metadata storage failed for {name}")]

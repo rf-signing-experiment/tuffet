@@ -1,9 +1,18 @@
-//! A transport that records requests and can simulate failures.
+//! A transport that records requests and can simulate failures, and a helper
+//! for calling transports directly.
 
 use std::collections::HashSet;
 use std::sync::Mutex;
 
+use futures_executor::block_on;
+use futures_util::TryStreamExt;
 use rftuf::transport::{ByteStream, MemoryTransport, Transport, TransportError};
+
+/// The content of a file that was fetched.
+pub fn read(fetched: Result<ByteStream, TransportError>) -> Vec<u8> {
+    let stream = fetched.unwrap();
+    block_on(stream.map_ok(|chunk| chunk.to_vec()).try_concat()).unwrap()
+}
 
 /// A [`MemoryTransport`] that records what is fetched.
 #[derive(Default)]
@@ -30,22 +39,30 @@ impl RecordingTransport {
 
     fn record(&self, request: String) -> Result<(), TransportError> {
         let failing = self.failing.lock().unwrap().contains(&request);
-        self.requests.lock().unwrap().push(request.clone());
+        self.requests.lock().unwrap().push(request);
         if failing {
-            return Err(TransportError::other(request, "simulated network failure"));
+            return Err(TransportError::other("simulated network failure"));
         }
         Ok(())
     }
 }
 
 impl Transport for RecordingTransport {
-    async fn fetch_metadata(&self, name: &str) -> Result<ByteStream, TransportError> {
+    async fn fetch_metadata(
+        &self,
+        name: &str,
+        max_length: u64,
+    ) -> Result<ByteStream, TransportError> {
         self.record(name.to_owned())?;
-        self.inner.fetch_metadata(name).await
+        self.inner.fetch_metadata(name, max_length).await
     }
 
-    async fn fetch_target(&self, path: &str) -> Result<ByteStream, TransportError> {
+    async fn fetch_target(
+        &self,
+        path: &str,
+        max_length: u64,
+    ) -> Result<ByteStream, TransportError> {
         self.record(format!("target:{path}"))?;
-        self.inner.fetch_target(path).await
+        self.inner.fetch_target(path, max_length).await
     }
 }

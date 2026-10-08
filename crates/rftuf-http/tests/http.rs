@@ -15,7 +15,7 @@ use hyper::service::service_fn;
 use hyper::{Request, Response, StatusCode};
 use hyper_util::rt::TokioIo;
 use rftuf::store::{MemoryStore, MetadataStore};
-use rftuf::transport::{Transport, TransportError};
+use rftuf::transport::{ByteStream, Transport, TransportError};
 use rftuf::{Error, Updater};
 use rftuf_http::HttpTransport;
 use tokio::net::TcpListener;
@@ -78,6 +78,16 @@ fn transport(address: SocketAddr) -> HttpTransport {
     )
 }
 
+/// The content of a file that was fetched.
+async fn read(fetched: Result<ByteStream, TransportError>) -> Vec<u8> {
+    fetched
+        .unwrap()
+        .map_ok(|chunk| chunk.to_vec())
+        .try_concat()
+        .await
+        .unwrap()
+}
+
 #[tokio::test]
 async fn fetches_files_and_maps_status_codes() {
     let files = HashMap::from([
@@ -90,26 +100,15 @@ async fn fetches_files_and_maps_status_codes() {
     let (address, log) = serve(files).await;
     let transport = transport(address);
 
-    let read = |stream: rftuf::transport::ByteStream| async {
-        stream
-            .map_ok(|chunk| chunk.to_vec())
-            .try_concat()
-            .await
-            .unwrap()
-    };
-    assert_eq!(
-        read(transport.fetch_metadata("timestamp.json").await.unwrap()).await,
-        b"timestamp"
-    );
-    assert_eq!(
-        read(transport.fetch_target("dir/a file?.txt").await.unwrap()).await,
-        b"target"
-    );
+    let fetched = transport.fetch_metadata("timestamp.json", u64::MAX).await;
+    assert_eq!(read(fetched).await, b"timestamp");
+    let fetched = transport.fetch_target("dir/a file?.txt", u64::MAX).await;
+    assert_eq!(read(fetched).await, b"target");
     assert_eq!(log.lock().unwrap()[1], "/targets/dir/a%20file%3F.txt");
 
     assert!(matches!(
-        transport.fetch_metadata("2.root.json").await,
-        Err(TransportError::NotFound(name)) if name == "2.root.json"
+        transport.fetch_metadata("2.root.json", u64::MAX).await,
+        Err(TransportError::NotFound)
     ));
     // Fetching "N" below `/status/` responds with status N.
     let status = HttpTransport::new(
@@ -117,13 +116,28 @@ async fn fetches_files_and_maps_status_codes() {
         format!("http://{address}/status/").parse().unwrap(),
     );
     assert!(matches!(
-        status.fetch_metadata("403").await,
-        Err(TransportError::NotFound(_))
+        status.fetch_metadata("403", u64::MAX).await,
+        Err(TransportError::NotFound)
     ));
     assert!(matches!(
-        status.fetch_target("500").await,
-        Err(TransportError::Other { .. })
+        status.fetch_target("500", u64::MAX).await,
+        Err(TransportError::Other(_))
     ));
+}
+
+/// A response whose `Content-Length` exceeds the maximum length is rejected
+/// before its body is read.
+#[tokio::test]
+async fn rejects_responses_longer_than_the_maximum_length() {
+    let files = HashMap::from([("/metadata/timestamp.json".to_owned(), vec![b'x'; 100])]);
+    let (address, _) = serve(files).await;
+    let transport = transport(address);
+    assert!(matches!(
+        transport.fetch_metadata("timestamp.json", 99).await,
+        Err(TransportError::TooLarge)
+    ));
+    let exact = transport.fetch_metadata("timestamp.json", 100).await;
+    assert_eq!(read(exact).await, vec![b'x'; 100]);
 }
 
 #[tokio::test]
@@ -133,7 +147,7 @@ async fn endless_responses_are_cut_off() {
         format!("http://{address}/").parse().unwrap(),
         format!("http://{address}/").parse().unwrap(),
     );
-    let mut stream = transport.fetch_target("endless").await.unwrap();
+    let mut stream = transport.fetch_target("endless", u64::MAX).await.unwrap();
     let mut received = 0;
     while received < 1_000_000 {
         received += stream.try_next().await.unwrap().unwrap().len();

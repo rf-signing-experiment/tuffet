@@ -44,21 +44,26 @@ impl MemoryTransport {
 }
 
 impl Transport for MemoryTransport {
-    async fn fetch_metadata(&self, name: &str) -> Result<ByteStream, TransportError> {
+    async fn fetch_metadata(
+        &self,
+        name: &str,
+        _max_length: u64,
+    ) -> Result<ByteStream, TransportError> {
         fetch(&self.metadata, name)
     }
 
-    async fn fetch_target(&self, path: &str) -> Result<ByteStream, TransportError> {
+    async fn fetch_target(
+        &self,
+        path: &str,
+        _max_length: u64,
+    ) -> Result<ByteStream, TransportError> {
         fetch(&self.targets, path)
     }
 }
 
 fn fetch(files: &RwLock<HashMap<String, Bytes>>, name: &str) -> Result<ByteStream, TransportError> {
     let files = files.read().unwrap_or_else(PoisonError::into_inner);
-    let data = files
-        .get(name)
-        .cloned()
-        .ok_or_else(|| TransportError::NotFound(name.to_owned()))?;
+    let data = files.get(name).cloned().ok_or(TransportError::NotFound)?;
     Ok(Box::pin(stream::once(future::ready(Ok(data)))))
 }
 
