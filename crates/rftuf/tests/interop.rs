@@ -5,6 +5,8 @@
 
 mod support;
 
+use std::assert_matches;
+
 use futures_executor::block_on;
 use rftuf::metadata::{Metadata, Root, Snapshot, Targets, Timestamp};
 use rftuf::pouf::{Json, Pouf};
@@ -33,18 +35,18 @@ fn verifies_the_metadata_of_the_reference_implementation() {
     let role2 = Metadata::<Targets>::from_bytes(&python_tuf("role2.json")).unwrap();
     role1.signed().verify_delegate("role2", &role2).unwrap();
 
-    assert!(matches!(
+    assert_matches!(
         targets.signed().verify_delegate("role1", &targets),
         Err(Error::SignatureThreshold {
             valid: 0,
             threshold: 1,
             ..
         })
-    ));
-    assert!(matches!(
+    );
+    assert_matches!(
         targets.signed().verify_delegate("role2", &role2),
         Err(Error::UnknownDelegation(role)) if role == "role2"
-    ));
+    );
 }
 
 /// The key IDs rftuf computes for new keys are those of the reference
@@ -133,8 +135,8 @@ fn updates_from_the_repository_of_the_reference_implementation() {
 
     // The repository's metadata expires in 2030.
     let late = "2031-01-01T00:00:00Z".parse::<jiff::Timestamp>().unwrap();
-    assert!(matches!(
+    assert_matches!(
         block_on(updater.refresh_at(late)),
         Err(Error::Expired { .. })
-    ));
+    );
 }

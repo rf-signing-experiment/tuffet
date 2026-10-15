@@ -69,6 +69,7 @@ impl Hashes {
 /// [`update`](Self::update) fails as soon as more data arrives than the file
 /// may have, so that an attacker cannot send endless data;
 /// [`finish`](Self::finish) then checks the exact length and the hashes.
+#[derive(Debug)]
 pub struct FileVerifier {
     name: String,
     max_length: u64,

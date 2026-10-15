@@ -4,6 +4,8 @@
 //! The key types and signature schemes themselves are tested in the
 //! `crypto` tests.
 
+use std::assert_matches;
+
 use rftuf::Error;
 use rftuf::crypto::{HashAlgorithm, Signer};
 use rftuf::metadata::{
@@ -113,15 +115,15 @@ fn a_key_id_only_names_a_key_in_the_metadata_that_lists_it() {
         metadata
     };
     root.verify_role(&signed_by(&in_root)).unwrap();
-    assert!(matches!(
+    assert_matches!(
         root.verify_role(&signed_by(&in_delegation)),
         Err(Error::SignatureThreshold { .. })
-    ));
+    );
     top_level
         .verify_delegate("a", &signed_by(&in_delegation))
         .unwrap();
-    assert!(matches!(
+    assert_matches!(
         top_level.verify_delegate("a", &signed_by(&in_root)),
         Err(Error::SignatureThreshold { .. })
-    ));
+    );
 }

@@ -1,5 +1,7 @@
 //! The cryptography backend built on AWS-LC, through `aws-lc-rs`.
 
+use std::fmt;
+
 use aws_lc_rs::digest;
 use aws_lc_rs::encoding::AsDer;
 use aws_lc_rs::rand::SystemRandom;
@@ -35,6 +37,13 @@ impl Hasher {
 
     pub(super) fn finalize(self) -> Vec<u8> {
         self.0.finish().as_ref().to_vec()
+    }
+}
+
+// `digest::Context` does not implement `Debug`: show its algorithm instead.
+impl fmt::Debug for Hasher {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("Hasher").field(self.0.algorithm()).finish()
     }
 }
 

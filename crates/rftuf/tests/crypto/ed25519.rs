@@ -2,6 +2,8 @@
 //! signature algorithm based on Twisted Edwards curves", whose PUBLIC is a
 //! "64-byte hex encoded string": the 32-byte public key in hex.
 
+use std::assert_matches;
+
 use rftuf::crypto::{CryptoError, PrivateKey, Signer, verify_signature};
 use rftuf::metadata::{Key, KeyType, SignatureScheme};
 
@@ -49,11 +51,9 @@ fn public_keys_are_32_bytes_in_hex() {
         "zz".repeat(32),
         data::crypto_text("p256.pub.pem"),
     ] {
-        assert!(
-            matches!(
-                verify_signature(&ed25519_key(&invalid), &message(), &signature),
-                Err(CryptoError::InvalidPublicKey(_))
-            ),
+        assert_matches!(
+            verify_signature(&ed25519_key(&invalid), &message(), &signature),
+            Err(CryptoError::InvalidPublicKey(_)),
             "{invalid}"
         );
     }
@@ -66,9 +66,9 @@ fn signatures_of_another_length_are_rejected() {
     let signature = data::crypto("ed25519.sig");
     assert_eq!(signature.len(), 64);
     for invalid in [&signature[..63], &[&signature[..], &[0]].concat(), &[]] {
-        assert!(matches!(
+        assert_matches!(
             verify_signature(&key, &message(), invalid),
             Err(CryptoError::BadSignature)
-        ));
+        );
     }
 }

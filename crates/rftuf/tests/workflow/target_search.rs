@@ -6,6 +6,7 @@
 //! graphs of unsigned targets payloads. The `Updater` tests check that
 //! delegated metadata is downloaded and verified as the search needs it.
 
+use std::assert_matches;
 use std::collections::HashMap;
 
 use rftuf::crypto::HashAlgorithm;
@@ -13,7 +14,7 @@ use rftuf::metadata::{DelegatedRole, Delegations, TargetFile, Targets};
 use rftuf::trusted::TargetSearch;
 use rftuf::{Error, UpdaterConfig};
 
-use crate::support::{Delegation, TestRepo, assert_err, far_future};
+use crate::support::{Delegation, TestRepo, far_future};
 
 /// A delegation in a [`Graph`].
 struct Edge {
@@ -282,7 +283,7 @@ fn the_updater_searches_delegations_in_order_of_priority() {
     // The repository serves one file per path: here, the one "b" lists. It
     // does not match what the role trusted for the path, "a", lists.
     let target = client.get_target_info("a/shared").unwrap().unwrap();
-    assert_err!(client.download(&target), Error::HashMismatch { .. });
+    assert_matches!(client.download(&target), Err(Error::HashMismatch { .. }));
     repo.serve_target("a/shared", b"from a");
     assert_eq!(client.download(&target).unwrap(), b"from a");
 }
@@ -371,16 +372,16 @@ fn reports_delegated_metadata_that_cannot_be_downloaded_or_validated() {
     repo.remove("a.json");
     let mut client = repo.client();
     client.refresh().unwrap();
-    assert_err!(
+    assert_matches!(
         client.get_target_info("file"),
-        Error::MetadataNotFound(name) if name == "a.json"
+        Err(Error::MetadataNotFound(name)) if name == "a.json"
     );
 
     let signed_by_another_key = repo.sign("targets", &repo.targets["a"]);
     repo.write("a.json", signed_by_another_key);
-    assert_err!(
+    assert_matches!(
         client.get_target_info("file"),
-        Error::SignatureThreshold { role, .. } if role == "a"
+        Err(Error::SignatureThreshold { role, .. }) if role == "a"
     );
 }
 
@@ -402,9 +403,9 @@ fn a_role_reached_through_another_delegation_is_verified_again() {
     let mut client = repo.client();
     client.refresh().unwrap();
     assert_eq!(client.find("a/file").as_deref(), Some("shared"));
-    assert_err!(
+    assert_matches!(
         client.get_target_info("b/file"),
-        Error::SignatureThreshold { role, valid: 0, threshold: 1 } if role == "shared"
+        Err(Error::SignatureThreshold { role, valid: 0, threshold: 1 }) if role == "shared"
     );
     assert_eq!(client.find("a/file").as_deref(), Some("shared"));
 
@@ -412,9 +413,9 @@ fn a_role_reached_through_another_delegation_is_verified_again() {
     // metadata it persisted after verifying it through "a".
     let mut restarted = client.restart();
     restarted.refresh().unwrap();
-    assert_err!(
+    assert_matches!(
         restarted.get_target_info("b/file"),
-        Error::SignatureThreshold { role, valid: 0, threshold: 1 } if role == "shared"
+        Err(Error::SignatureThreshold { role, valid: 0, threshold: 1 }) if role == "shared"
     );
     assert_eq!(restarted.find("a/file").as_deref(), Some("shared"));
 }

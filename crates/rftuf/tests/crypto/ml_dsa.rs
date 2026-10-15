@@ -4,6 +4,8 @@
 //! message `"tuf" || 0x01 || SHA-512(payload)`, with pure ML-DSA and an
 //! empty context.
 
+use std::assert_matches;
+
 use rftuf::crypto::{
     CryptoError, HashAlgorithm, PrivateKey, Signer, ml_dsa_message, verify_signature,
 };
@@ -30,18 +32,18 @@ fn signatures_are_of_the_tap21_message() {
     let key = key(SignatureScheme::MlDsa44V1, "ml-dsa-44.pub.pem");
     let openssl = data::crypto("ml-dsa-44.sig");
     verify_signature(&key, &message(), &openssl).unwrap();
-    assert!(matches!(
+    assert_matches!(
         verify_signature(&key, &ml_dsa_message(&message()), &openssl),
         Err(CryptoError::BadSignature)
-    ));
+    );
 
     let signer = PrivateKey::from_pkcs8_pem(&data::crypto_text("ml-dsa-44.key.pem")).unwrap();
     let ours = signer.sign(&message()).unwrap();
     verify_signature(&key, &message(), &ours).unwrap();
-    assert!(matches!(
+    assert_matches!(
         verify_signature(&key, &ml_dsa_message(&message()), &ours),
         Err(CryptoError::BadSignature)
-    ));
+    );
 }
 
 /// The scheme names the parameter set: a signature only verifies with its
@@ -75,8 +77,9 @@ fn signatures_only_verify_with_their_parameter_set() {
                 &message(),
                 &data::crypto(signature),
             );
-            assert!(
-                matches!(result, Err(CryptoError::BadSignature)),
+            assert_matches!(
+                result,
+                Err(CryptoError::BadSignature),
                 "{signed_with} checked as {scheme}"
             );
             let result = verify_signature(
@@ -84,8 +87,9 @@ fn signatures_only_verify_with_their_parameter_set() {
                 &message(),
                 &data::crypto(signature),
             );
-            assert!(
-                matches!(result, Err(CryptoError::InvalidPublicKey(_))),
+            assert_matches!(
+                result,
+                Err(CryptoError::InvalidPublicKey(_)),
                 "{scheme} key used as {signed_with}"
             );
         }
@@ -118,10 +122,7 @@ fn private_keys_load_in_the_forms_with_a_seed() {
             data::crypto_text("ml-dsa-44.pub.pem")
         );
     } else {
-        assert!(matches!(
-            expanded_only,
-            Err(CryptoError::InvalidPrivateKey(_))
-        ));
+        assert_matches!(expanded_only, Err(CryptoError::InvalidPrivateKey(_)));
     }
 }
 
@@ -134,8 +135,8 @@ fn private_keys_whose_forms_disagree_are_rejected() {
     PrivateKey::from_pkcs8_der(&der).unwrap();
     // The expanded key comes last.
     *der.last_mut().unwrap() ^= 1;
-    assert!(matches!(
+    assert_matches!(
         PrivateKey::from_pkcs8_der(&der),
         Err(CryptoError::InvalidPrivateKey(_))
-    ));
+    );
 }

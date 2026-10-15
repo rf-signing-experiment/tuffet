@@ -6,6 +6,7 @@
 //! updates, the client relies on the metadata it persisted (5.3.8, 5.4.5,
 //! 5.5.7, 5.6.6).
 
+use std::assert_matches;
 use std::io;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -15,7 +16,7 @@ use rftuf::metadata::RoleType;
 use rftuf::store::{MemoryStore, MetadataStore};
 use rftuf::{Error, Updater};
 
-use crate::support::{Delegation, TestRepo, assert_err, expired, far_future, now};
+use crate::support::{Delegation, TestRepo, expired, far_future, now};
 
 /// After a failed update the client trusts no metadata but root, and once
 /// the repository is repaired, the next update succeeds.
@@ -26,7 +27,7 @@ fn an_update_can_be_repeated_after_a_failure() {
     repo.timestamp.expires = expired();
     repo.commit();
     let mut client = repo.client();
-    assert_err!(client.refresh(), Error::Expired { role, .. } if role == "timestamp");
+    assert_matches!(client.refresh(), Err(Error::Expired { role, .. }) if role == "timestamp");
     assert!(client.updater.trusted().is_none());
 
     repo.timestamp.expires = far_future();
@@ -49,11 +50,11 @@ fn a_failed_update_ends_the_trust_in_earlier_metadata() {
 
     repo.timestamp.expires = expired();
     repo.publish_timestamp();
-    assert_err!(client.refresh(), Error::Expired { role, .. } if role == "timestamp");
+    assert_matches!(client.refresh(), Err(Error::Expired { role, .. }) if role == "timestamp");
     assert!(client.updater.trusted().is_none());
-    assert_err!(
+    assert_matches!(
         client.get_target_info("file"),
-        Error::Expired { role, .. } if role == "timestamp"
+        Err(Error::Expired { role, .. }) if role == "timestamp"
     );
 }
 
@@ -67,7 +68,7 @@ fn new_root_versions_stay_trusted_when_a_later_step_fails() {
     repo.publish_timestamp();
 
     let mut client = repo.client();
-    assert_err!(client.refresh(), Error::Expired { role, .. } if role == "timestamp");
+    assert_matches!(client.refresh(), Err(Error::Expired { role, .. }) if role == "timestamp");
     assert_eq!(client.root_version(), 2);
     assert_eq!(client.stored("root.json"), Some(repo.file("2.root.json")));
 }
@@ -174,7 +175,7 @@ fn invalid_persisted_metadata_is_downloaded_again() {
 }
 
 /// Local storage whose operations fail when told to.
-#[derive(Default)]
+#[derive(Debug, Default)]
 struct FaultyStore {
     files: MemoryStore,
     fail_loads: AtomicBool,
@@ -221,14 +222,14 @@ fn local_storage_failures_are_reported() {
     };
 
     store.fail_loads.store(true, Ordering::SeqCst);
-    assert_err!(updater(&store), Error::Store { name, .. } if name == "root.json");
+    assert_matches!(updater(&store), Err(Error::Store { name, .. }) if name == "root.json");
     store.fail_loads.store(false, Ordering::SeqCst);
 
     let mut updater = updater(&store).unwrap();
     store.fail_stores.store(true, Ordering::SeqCst);
-    assert_err!(
+    assert_matches!(
         block_on(updater.refresh_at(now())),
-        Error::Store { name, .. } if name == "timestamp.json"
+        Err(Error::Store { name, .. }) if name == "timestamp.json"
     );
     store.fail_stores.store(false, Ordering::SeqCst);
     block_on(updater.refresh_at(now())).unwrap();
@@ -238,8 +239,8 @@ fn local_storage_failures_are_reported() {
     repo.rotate_key(RoleType::Timestamp);
     repo.publish_root();
     store.fail_removes.store(true, Ordering::SeqCst);
-    assert_err!(
+    assert_matches!(
         block_on(updater.refresh_at(now())),
-        Error::Store { name, .. } if name == "timestamp.json"
+        Err(Error::Store { name, .. }) if name == "timestamp.json"
     );
 }

@@ -2,6 +2,8 @@
 //! "canonical JSON" subdialect" (OLPC canonical JSON, as the reference
 //! implementation produces it).
 
+use std::assert_matches;
+
 use rftuf::Error;
 use rftuf::metadata::{Metadata, Root, Timestamp};
 use rftuf::pouf::json::canonical;
@@ -62,10 +64,7 @@ fn numbers_must_be_integers() {
     let repo = TestRepo::new();
     let mut payload = serde_json::to_value(&repo.timestamp).unwrap();
     payload["x-extension"] = json!({"ratio": 0.5});
-    assert!(matches!(
-        decode::<Timestamp>(payload),
-        Err(Error::Decode(_))
-    ));
+    assert_matches!(decode::<Timestamp>(payload), Err(Error::Decode(_)));
 }
 
 /// Signatures cover the canonical form of the payload exactly as received,
@@ -124,8 +123,8 @@ fn duplicate_keys_mean_the_same_to_payload_and_signatures() {
     // A duplicate after it: the new value counts, and the signature is invalid.
     let after = timestamp(original.replace("\"version\": 1,", "\"version\": 1, \"version\": 2,"));
     assert_eq!(after.signed().version, 2);
-    assert!(matches!(
+    assert_matches!(
         root.signed().verify_role(&after),
         Err(Error::SignatureThreshold { .. })
-    ));
+    );
 }

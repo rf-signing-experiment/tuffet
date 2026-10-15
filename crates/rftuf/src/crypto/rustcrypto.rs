@@ -28,6 +28,7 @@ impl<P: MlDsaParams + AssociatedAlgorithmIdentifier<Params = AnyRef<'static>>> M
 {
 }
 
+#[derive(Debug)]
 pub(super) enum Hasher {
     Sha256(Sha256),
     Sha512(Sha512),

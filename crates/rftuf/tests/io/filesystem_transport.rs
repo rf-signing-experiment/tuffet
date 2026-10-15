@@ -3,11 +3,13 @@
 //! Names and paths come from metadata, so they must not escape their
 //! directory.
 
+use std::assert_matches;
+
 use futures_executor::block_on;
 use futures_util::TryStreamExt;
 use rftuf::transport::{FilesystemTransport, Transport, TransportError};
 
-use crate::support::{assert_err, read};
+use crate::support::read;
 
 /// A transport whose metadata directory holds `secret` and `timestamp.json`
 /// and whose targets directory holds `sub/file.bin`.
@@ -57,13 +59,13 @@ fn reads_large_files_in_chunks() {
 #[test]
 fn reports_missing_files_as_not_found() {
     let (_dir, transport) = transport();
-    assert_err!(
-        block_on(transport.fetch_metadata("2.root.json", u64::MAX)),
-        TransportError::NotFound
+    assert_matches!(
+        block_on(transport.fetch_metadata("2.root.json", u64::MAX)).map(drop),
+        Err(TransportError::NotFound)
     );
-    assert_err!(
-        block_on(transport.fetch_target("missing", u64::MAX)),
-        TransportError::NotFound
+    assert_matches!(
+        block_on(transport.fetch_target("missing", u64::MAX)).map(drop),
+        Err(TransportError::NotFound)
     );
 }
 
@@ -71,9 +73,9 @@ fn reports_missing_files_as_not_found() {
 fn names_and_paths_cannot_escape_their_directory() {
     let (_dir, transport) = transport();
     for name in ["../secret", "sub/secret", "", ".", "..", "nul\0"] {
-        assert_err!(
-            block_on(transport.fetch_metadata(name, u64::MAX)),
-            TransportError::Other(_)
+        assert_matches!(
+            block_on(transport.fetch_metadata(name, u64::MAX)).map(drop),
+            Err(TransportError::Other(_))
         );
     }
     for path in [
@@ -87,9 +89,9 @@ fn names_and_paths_cannot_escape_their_directory() {
         "",
         "sub/nul\0",
     ] {
-        assert_err!(
-            block_on(transport.fetch_target(path, u64::MAX)),
-            TransportError::Other(_)
+        assert_matches!(
+            block_on(transport.fetch_target(path, u64::MAX)).map(drop),
+            Err(TransportError::Other(_))
         );
     }
 }
@@ -103,13 +105,13 @@ fn reports_files_that_cannot_be_read() {
         let stream = transport.fetch_target("sub", u64::MAX).await?;
         stream.map_ok(|chunk| chunk.to_vec()).try_concat().await
     });
-    assert_err!(result, TransportError::Other(_));
+    assert_matches!(result, Err(TransportError::Other(_)));
 
     // A path that goes through a file cannot be opened.
     if cfg!(unix) {
-        assert_err!(
-            block_on(transport.fetch_target("sub/file.bin/inside", u64::MAX)),
-            TransportError::Other(_)
+        assert_matches!(
+            block_on(transport.fetch_target("sub/file.bin/inside", u64::MAX)).map(drop),
+            Err(TransportError::Other(_))
         );
     }
 }

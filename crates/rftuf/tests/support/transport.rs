@@ -15,7 +15,7 @@ pub fn read(fetched: Result<ByteStream, TransportError>) -> Vec<u8> {
 }
 
 /// A [`MemoryTransport`] that records what is fetched.
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct RecordingTransport {
     /// The files served.
     pub inner: MemoryTransport,

@@ -3,6 +3,8 @@
 //! `public_key_from_pem`, which encode them as `PrivateKey` does, so that a
 //! key always gets the same KEYVAL, and key ID.
 
+use std::assert_matches;
+
 use rftuf::crypto::{
     CryptoError, PrivateKey, Signer, public_key_from_pem, public_key_from_spki, verify_signature,
 };
@@ -78,39 +80,37 @@ fn keys_must_be_valid_for_their_scheme() {
         SignatureScheme::RsassaPssSha256,
         SignatureScheme::MlDsa44V1,
     ] {
-        assert!(
-            matches!(
-                public_key_from_pem(&scheme, &p256),
-                Err(CryptoError::InvalidPublicKey(_))
-            ),
+        assert_matches!(
+            public_key_from_pem(&scheme, &p256),
+            Err(CryptoError::InvalidPublicKey(_)),
             "{scheme}"
         );
     }
-    assert!(matches!(
+    assert_matches!(
         public_key_from_spki(&SignatureScheme::EcdsaSha2Nistp256, b"not a key"),
         Err(CryptoError::InvalidPublicKey(_))
-    ));
+    );
     let short_ed25519 = [&ED25519_SPKI_PREFIX[..], &[0; 31]].concat();
-    assert!(matches!(
+    assert_matches!(
         public_key_from_spki(&SignatureScheme::Ed25519, &short_ed25519),
         Err(CryptoError::InvalidPublicKey(_))
-    ));
-    assert!(matches!(
+    );
+    assert_matches!(
         public_key_from_pem(&SignatureScheme::Other("sphincs+".to_owned()), &p256),
         Err(CryptoError::UnsupportedScheme { .. })
-    ));
+    );
 }
 
 /// Only public keys (`BEGIN PUBLIC KEY`) are accepted, not private keys.
 #[test]
 fn private_keys_are_not_public_keys() {
-    assert!(matches!(
+    assert_matches!(
         public_key_from_pem(
             &SignatureScheme::EcdsaSha2Nistp256,
             &data::crypto_text("p256.key.pem")
         ),
         Err(CryptoError::InvalidPublicKey(reason)) if reason.contains("label")
-    ));
+    );
 }
 
 /// The keys described can verify signatures.

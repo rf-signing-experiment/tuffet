@@ -86,6 +86,7 @@ impl Default for UpdaterConfig {
 /// [`get_target_info`](Self::get_target_info) and download them.
 ///
 /// `P` is the [POUF](crate::pouf) of the repository's metadata.
+#[derive(Debug)]
 pub struct Updater<T, S, P: Pouf = Json> {
     workflow: Workflow<T, S>,
     /// The latest trusted root, from which each refresh starts.
@@ -215,6 +216,7 @@ impl<T: Transport, S: MetadataStore, P: Pouf> Updater<T, S, P> {
 }
 
 /// Builds an [`Updater`].
+#[derive(Debug)]
 pub struct UpdaterBuilder<T, S, P = Json> {
     transport: T,
     store: S,

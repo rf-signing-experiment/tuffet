@@ -3,6 +3,8 @@
 //! calculating hashes or verifying signatures and must preserve the data
 //! when re-serializing."
 
+use std::assert_matches;
+
 use rftuf::Error;
 use rftuf::crypto::Signer;
 use rftuf::metadata::{Metadata, Role, RoleType, Root, Snapshot, Targets, Timestamp};
@@ -49,10 +51,10 @@ fn unrecognized_fields_are_covered_by_signatures() {
     let tampered = encoded.replace("\"level\": 1", "\"level\": 2");
     assert_ne!(tampered, encoded);
     let tampered = Metadata::<Targets>::from_bytes(tampered.as_bytes()).unwrap();
-    assert!(matches!(
+    assert_matches!(
         root.verify_role(&tampered),
         Err(Error::SignatureThreshold { .. })
-    ));
+    );
 }
 
 /// Fields rftuf does not know survive decoding and encoding, at every level

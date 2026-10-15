@@ -5,12 +5,14 @@
 //! describes, be signed by the root's snapshot keys, not roll back any
 //! targets metadata the trusted snapshot lists, and not have expired.
 
+use std::assert_matches;
+
 use jiff::SignedDuration;
 use rftuf::metadata::{MetaFile, RoleType};
 use rftuf::pouf::Json;
 use rftuf::{Error, TrustedMetadata, UpdaterConfig};
 
-use crate::support::{Delegation, TestRepo, assert_err, expired, now};
+use crate::support::{Delegation, TestRepo, expired, now};
 
 /// Verification state that trusts the repository's current snapshot, loaded
 /// from the cache, and a timestamp that lists the next snapshot version,
@@ -47,9 +49,9 @@ fn snapshot_downloads_are_limited_to_the_length_listed_in_timestamp() {
 
     let mut config = UpdaterConfig::default();
     config.snapshot_max_length = length + 10;
-    assert_err!(
+    assert_matches!(
         repo.client_with(config).refresh(),
-        Error::TooLarge { name, max } if name == "snapshot.json" && max == length
+        Err(Error::TooLarge { name, max }) if name == "snapshot.json" && max == length
     );
 }
 
@@ -63,9 +65,9 @@ fn snapshot_downloads_are_limited_to_snapshot_max_length() {
 
     let mut config = UpdaterConfig::default();
     config.snapshot_max_length = length - 1;
-    assert_err!(
+    assert_matches!(
         repo.client_with(config.clone()).refresh(),
-        Error::TooLarge { name, max } if name == "snapshot.json" && max == length - 1
+        Err(Error::TooLarge { name, max }) if name == "snapshot.json" && max == length - 1
     );
     config.snapshot_max_length = length;
     repo.client_with(config).refresh().unwrap();
@@ -83,9 +85,10 @@ fn snapshot_must_match_the_hashes_listed_in_timestamp() {
     let mut other = repo.snapshot.clone();
     other.expires += SignedDuration::from_hours(24);
 
-    assert_err!(
+    assert_matches!(
         trusted.update_snapshot(&repo.sign("snapshot", &other)),
-        Error::HashMismatch { name, algorithm } if name == "snapshot.json" && algorithm == "sha256"
+        Err(Error::HashMismatch { name, algorithm })
+            if name == "snapshot.json" && algorithm == "sha256"
     );
     trusted
         .update_snapshot(&repo.file("snapshot.json"))
@@ -101,14 +104,14 @@ fn snapshot_must_be_signed_by_a_threshold_of_snapshot_keys() {
     let mut trusted = repo.trusted_with_timestamp();
 
     let by_timestamp_key = repo.sign("timestamp", &repo.snapshot);
-    assert_err!(
+    assert_matches!(
         trusted.update_snapshot(&by_timestamp_key),
-        Error::SignatureThreshold { role, valid: 0, threshold: 2 } if role == "snapshot"
+        Err(Error::SignatureThreshold { role, valid: 0, threshold: 2 }) if role == "snapshot"
     );
     let by_one_key = TestRepo::sign_with(&repo.snapshot, &[&keys[0]]);
-    assert_err!(
+    assert_matches!(
         trusted.update_snapshot(&by_one_key),
-        Error::SignatureThreshold { role, valid: 1, threshold: 2 } if role == "snapshot"
+        Err(Error::SignatureThreshold { role, valid: 1, threshold: 2 }) if role == "snapshot"
     );
     trusted
         .update_snapshot(&repo.file("snapshot.json"))
@@ -125,16 +128,16 @@ fn snapshot_version_must_match_timestamp() {
     version_2.version = 2;
     let version_2 = repo.sign("snapshot", &version_2);
     let mut trusted = repo.trusted_with_timestamp();
-    assert_err!(
+    assert_matches!(
         trusted.update_snapshot(&version_2),
-        Error::VersionMismatch { role, expected: 1, actual: 2 } if role == "snapshot"
+        Err(Error::VersionMismatch { role, expected: 1, actual: 2 }) if role == "snapshot"
     );
 
     repo.publish_snapshot();
     repo.write("snapshot.json", version_1);
-    assert_err!(
+    assert_matches!(
         repo.client().refresh(),
-        Error::VersionMismatch { role, expected: 2, actual: 1 } if role == "snapshot"
+        Err(Error::VersionMismatch { role, expected: 2, actual: 1 }) if role == "snapshot"
     );
 }
 
@@ -157,9 +160,9 @@ fn snapshot_must_not_roll_back_targets_metadata() {
         let mut next = repo.snapshot.clone();
         next.version += 1;
         next.meta.insert(file.to_owned(), MetaFile::new(1));
-        assert_err!(
+        assert_matches!(
             trusted.update_snapshot(&repo.sign("snapshot", &next)),
-            Error::Rollback { role, trusted: 2, new: 1 } if role == file
+            Err(Error::Rollback { role, trusted: 2, new: 1 }) if role == file
         );
     }
 }
@@ -178,9 +181,9 @@ fn snapshot_must_keep_listing_targets_metadata() {
         let mut next = repo.snapshot.clone();
         next.version += 1;
         next.meta.remove(file);
-        assert_err!(
+        assert_matches!(
             trusted.update_snapshot(&repo.sign("snapshot", &next)),
-            Error::RemovedFromSnapshot(name) if name == file
+            Err(Error::RemovedFromSnapshot(name)) if name == file
         );
     }
 }
@@ -209,13 +212,16 @@ fn rejects_an_expired_snapshot() {
     repo.publish_snapshot();
 
     let mut trusted = repo.trusted_with_timestamp();
-    assert_err!(
+    assert_matches!(
         trusted.update_snapshot(&repo.file("snapshot.json")),
-        Error::Expired { role, .. } if role == "snapshot"
+        Err(Error::Expired { role, .. }) if role == "snapshot"
     );
     assert!(trusted.snapshot().is_none());
 
-    assert_err!(repo.client().refresh(), Error::Expired { role, .. } if role == "snapshot");
+    assert_matches!(
+        repo.client().refresh(),
+        Err(Error::Expired { role, .. }) if role == "snapshot"
+    );
 }
 
 /// 5.5.7: "The client MUST write the file to non-volatile storage as
@@ -280,13 +286,13 @@ fn an_expired_trusted_snapshot_is_not_used() {
         .load_cached_snapshot(&repo.file("snapshot.json"))
         .unwrap();
     assert!(!current, "an expired snapshot is not current");
-    assert_err!(
+    assert_matches!(
         trusted.update_targets(&repo.file("targets.json")),
-        Error::Expired { role, .. } if role == "snapshot"
+        Err(Error::Expired { role, .. }) if role == "snapshot"
     );
 
     client.time = later;
-    assert_err!(client.refresh(), Error::Expired { role, .. } if role == "snapshot");
+    assert_matches!(client.refresh(), Err(Error::Expired { role, .. }) if role == "snapshot");
 }
 
 /// 5.5.3: signatures are checked with the keys of the newest root, so a
@@ -301,9 +307,9 @@ fn a_trusted_snapshot_signed_with_a_rotated_out_key_is_not_used() {
     repo.publish_snapshot();
 
     let mut trusted = repo.trusted_with_timestamp();
-    assert_err!(
+    assert_matches!(
         trusted.load_cached_snapshot(&signed_with_old_key),
-        Error::SignatureThreshold { role, .. } if role == "snapshot"
+        Err(Error::SignatureThreshold { role, .. }) if role == "snapshot"
     );
     trusted
         .update_snapshot(&repo.file("snapshot.json"))
@@ -320,9 +326,9 @@ fn an_outdated_trusted_snapshot_is_only_a_rollback_baseline() {
 
     let mut trusted = repo.trusted_with_timestamp();
     assert!(!trusted.load_cached_snapshot(&version_1).unwrap());
-    assert_err!(
+    assert_matches!(
         trusted.update_targets(&repo.file("targets.json")),
-        Error::VersionMismatch { role, expected: 2, actual: 1 } if role == "snapshot"
+        Err(Error::VersionMismatch { role, expected: 2, actual: 1 }) if role == "snapshot"
     );
     trusted
         .update_snapshot(&repo.file("snapshot.json"))

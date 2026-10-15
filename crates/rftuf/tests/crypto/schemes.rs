@@ -8,6 +8,8 @@
 //! "rsassa-pss-sha512", which other implementations use, and the ML-DSA
 //! schemes of TAP 21.
 
+use std::assert_matches;
+
 use rftuf::crypto::{CryptoError, PrivateKey, Signer, verify_signature};
 use rftuf::metadata::{Key, KeyType, SignatureScheme};
 
@@ -68,11 +70,9 @@ fn verifies_signatures_made_by_openssl() {
         let key = key(scheme.clone(), public);
         let signature = data::crypto(signature);
         verify_signature(&key, &message(), &signature).unwrap_or_else(|e| panic!("{scheme}: {e}"));
-        assert!(
-            matches!(
-                verify_signature(&key, b"another message", &signature),
-                Err(CryptoError::BadSignature)
-            ),
+        assert_matches!(
+            verify_signature(&key, b"another message", &signature),
+            Err(CryptoError::BadSignature),
             "{scheme}"
         );
     }
@@ -88,19 +88,15 @@ fn generated_keys_sign_and_verify() {
         let signature = signer.sign(b"payload").unwrap();
         verify_signature(signer.public_key(), b"payload", &signature).unwrap();
 
-        assert!(
-            matches!(
-                verify_signature(signer.public_key(), b"Payload", &signature),
-                Err(CryptoError::BadSignature)
-            ),
+        assert_matches!(
+            verify_signature(signer.public_key(), b"Payload", &signature),
+            Err(CryptoError::BadSignature),
             "{scheme}"
         );
         let other = PrivateKey::generate(&scheme).unwrap();
-        assert!(
-            matches!(
-                verify_signature(other.public_key(), b"payload", &signature),
-                Err(CryptoError::BadSignature)
-            ),
+        assert_matches!(
+            verify_signature(other.public_key(), b"payload", &signature),
+            Err(CryptoError::BadSignature),
             "{scheme}"
         );
     }
@@ -175,17 +171,18 @@ fn private_keys_made_by_openssl_sign_and_verify() {
 fn key_type_and_scheme_must_belong_together() {
     let mut ed25519 = key(SignatureScheme::Ed25519, "ed25519.pub.hex");
     ed25519.keytype = KeyType::Rsa;
-    assert!(matches!(
+    assert_matches!(
         verify_signature(&ed25519, &message(), &data::crypto("ed25519.sig")),
-        Err(CryptoError::UnsupportedScheme { keytype, scheme }) if keytype == "rsa" && scheme == "ed25519"
-    ));
+        Err(CryptoError::UnsupportedScheme { keytype, scheme })
+            if keytype == "rsa" && scheme == "ed25519"
+    );
 
     let mut p256 = key(SignatureScheme::EcdsaSha2Nistp256, "p256.pub.pem");
     p256.scheme = SignatureScheme::RsassaPssSha256;
-    assert!(matches!(
+    assert_matches!(
         verify_signature(&p256, &message(), &data::crypto("p256.sig")),
         Err(CryptoError::UnsupportedScheme { .. })
-    ));
+    );
 }
 
 /// Key types and schemes rftuf does not implement cannot verify anything.
@@ -196,12 +193,12 @@ fn unknown_schemes_are_unsupported() {
         SignatureScheme::Other("sphincs+".to_owned()),
         "00".repeat(32),
     );
-    assert!(matches!(
+    assert_matches!(
         verify_signature(&unknown, &message(), &[0; 64]),
         Err(CryptoError::UnsupportedScheme { .. })
-    ));
-    assert!(matches!(
+    );
+    assert_matches!(
         PrivateKey::generate(&SignatureScheme::Other("sphincs+".to_owned())),
         Err(CryptoError::UnsupportedScheme { .. })
-    ));
+    );
 }

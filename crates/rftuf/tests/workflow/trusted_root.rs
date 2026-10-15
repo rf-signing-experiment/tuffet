@@ -6,6 +6,7 @@
 //! by the root keys of the one before it. Without a shipped root, it starts
 //! from the root persisted last.
 
+use std::assert_matches;
 use std::sync::Arc;
 
 use rftuf::crypto::Signer;
@@ -15,7 +16,7 @@ use rftuf::store::{MemoryStore, MetadataStore};
 use rftuf::{Error, TrustedMetadata, Updater};
 
 use crate::support::keys::{key, key_id};
-use crate::support::{TestRepo, assert_err, expired, far_future, now};
+use crate::support::{TestRepo, expired, far_future, now};
 
 /// Builds an updater for `repo` from `initial_root` (if any) and `store`.
 fn build(
@@ -37,14 +38,14 @@ fn trusted_root_must_be_signed_by_its_own_root_keys() {
     let repo = TestRepo::new();
     let signed_by_timestamp_key = TestRepo::sign_with(&repo.root, &[&repo.signers["timestamp"][0]]);
 
-    assert_err!(
+    assert_matches!(
         TrustedMetadata::<Json>::new(&signed_by_timestamp_key, now()),
-        Error::SignatureThreshold { role, valid: 0, threshold: 1 } if role == "root"
+        Err(Error::SignatureThreshold { role, valid: 0, threshold: 1 }) if role == "root"
     );
     let store = Arc::new(MemoryStore::new());
-    assert_err!(
+    assert_matches!(
         build(&repo, &store, Some(signed_by_timestamp_key)),
-        Error::SignatureThreshold { .. }
+        Err(Error::SignatureThreshold { .. })
     );
 }
 
@@ -69,7 +70,7 @@ fn trusted_root_may_have_expired() {
 fn an_updater_needs_a_shipped_or_persisted_root() {
     let repo = TestRepo::new();
     let empty = Arc::new(MemoryStore::new());
-    assert_err!(build(&repo, &empty, None), Error::NoTrustedRoot);
+    assert_matches!(build(&repo, &empty, None), Err(Error::NoTrustedRoot));
 
     let store = Arc::new(MemoryStore::new());
     store.store("root.json", &repo.initial_root()).unwrap();

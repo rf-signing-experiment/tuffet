@@ -1,10 +1,12 @@
 //! `MemoryTransport` serves files held in memory, which can be changed at any
 //! time.
 
+use std::assert_matches;
+
 use futures_executor::block_on;
 use rftuf::transport::{MemoryTransport, Transport, TransportError};
 
-use crate::support::{assert_err, read};
+use crate::support::read;
 
 #[test]
 fn serves_the_files_it_holds() {
@@ -24,19 +26,19 @@ fn serves_the_files_it_holds() {
     );
 
     // Metadata and targets are separate.
-    assert_err!(
-        block_on(transport.fetch_target("timestamp.json", u64::MAX)),
-        TransportError::NotFound
+    assert_matches!(
+        block_on(transport.fetch_target("timestamp.json", u64::MAX)).map(drop),
+        Err(TransportError::NotFound)
     );
 
     transport.remove_metadata("timestamp.json");
     transport.remove_target("dir/file");
-    assert_err!(
-        block_on(transport.fetch_metadata("timestamp.json", u64::MAX)),
-        TransportError::NotFound
+    assert_matches!(
+        block_on(transport.fetch_metadata("timestamp.json", u64::MAX)).map(drop),
+        Err(TransportError::NotFound)
     );
-    assert_err!(
-        block_on(transport.fetch_target("dir/file", u64::MAX)),
-        TransportError::NotFound
+    assert_matches!(
+        block_on(transport.fetch_target("dir/file", u64::MAX)).map(drop),
+        Err(TransportError::NotFound)
     );
 }

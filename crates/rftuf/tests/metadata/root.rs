@@ -1,6 +1,8 @@
 //! 4.3 File formats: root.json, which "indicates which keys are authorized
 //! for all top-level roles, including the root role itself".
 
+use std::assert_matches;
+
 use rftuf::Error;
 use rftuf::crypto::Signer;
 use rftuf::metadata::{KeyId, Metadata, RoleType, Root};
@@ -61,10 +63,7 @@ fn every_top_level_role_must_be_listed() {
     for role in ["root", "snapshot", "targets", "timestamp"] {
         let mut payload = python_tuf_payload("root.json");
         payload["roles"].as_object_mut().unwrap().remove(role);
-        assert!(
-            matches!(decode::<Root>(payload), Err(Error::Decode(_))),
-            "{role}"
-        );
+        assert_matches!(decode::<Root>(payload), Err(Error::Decode(_)), "{role}");
     }
 }
 
@@ -78,7 +77,7 @@ fn thresholds_must_be_at_least_one() {
     }
     let mut payload = python_tuf_payload("root.json");
     payload["roles"]["root"]["threshold"] = json!(-1);
-    assert!(matches!(decode::<Root>(payload), Err(Error::Decode(_))));
+    assert_matches!(decode::<Root>(payload), Err(Error::Decode(_)));
 }
 
 /// A role lists each of its keys once, so that no key can count twice

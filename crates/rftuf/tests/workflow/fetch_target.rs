@@ -3,6 +3,7 @@
 //! A target is downloaded only once trusted targets metadata describes it,
 //! and only accepted if it has the length and hashes that metadata lists.
 
+use std::assert_matches;
 use std::io;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -16,7 +17,7 @@ use rftuf::transport::{ByteStream, Transport, TransportError};
 use rftuf::{Error, Updater};
 use serde_json::json;
 
-use crate::support::{RecordingTransport, TestRepo, assert_err, now};
+use crate::support::{RecordingTransport, TestRepo, now};
 
 /// A repository with one target, `file`, whose content is `genuine`, and a
 /// client that trusts its metadata.
@@ -63,9 +64,9 @@ fn reports_a_target_that_the_repository_does_not_have() {
     let (repo, mut client) = repo_with_target();
     let target = client.get_target_info("file").unwrap().unwrap();
     repo.transport.inner.remove_target("file");
-    assert_err!(
+    assert_matches!(
         client.download(&target),
-        Error::TargetNotFound(path) if path == "file"
+        Err(Error::TargetNotFound(path)) if path == "file"
     );
 }
 
@@ -77,9 +78,9 @@ fn rejects_a_target_with_other_content() {
     let (mut repo, mut client) = repo_with_target();
     let target = client.get_target_info("file").unwrap().unwrap();
     repo.serve_target("file", b"forged!");
-    assert_err!(
+    assert_matches!(
         client.download(&target),
-        Error::HashMismatch { name, algorithm } if name == "file" && algorithm == "sha256"
+        Err(Error::HashMismatch { name, algorithm }) if name == "file" && algorithm == "sha256"
     );
 }
 
@@ -91,9 +92,9 @@ fn stops_downloading_a_target_at_its_listed_length() {
     let (mut repo, mut client) = repo_with_target();
     let target = client.get_target_info("file").unwrap().unwrap();
     repo.serve_target("file", b"genuine, followed by endless data");
-    assert_err!(
+    assert_matches!(
         client.download(&target),
-        Error::TooLarge { name, max: 7 } if name == "file"
+        Err(Error::TooLarge { name, max: 7 }) if name == "file"
     );
 }
 
@@ -103,9 +104,9 @@ fn rejects_a_truncated_target() {
     let (mut repo, mut client) = repo_with_target();
     let target = client.get_target_info("file").unwrap().unwrap();
     repo.serve_target("file", b"genuin");
-    assert_err!(
+    assert_matches!(
         client.download(&target),
-        Error::LengthMismatch { name, expected: 7, actual: 6 } if name == "file"
+        Err(Error::LengthMismatch { name, expected: 7, actual: 6 }) if name == "file"
     );
 }
 
@@ -124,9 +125,9 @@ fn every_supported_hash_must_match() {
     client.refresh().unwrap();
 
     let target = client.get_target_info("file").unwrap().unwrap();
-    assert_err!(
+    assert_matches!(
         client.download(&target),
-        Error::HashMismatch { algorithm, .. } if algorithm == "sha512"
+        Err(Error::HashMismatch { algorithm, .. }) if algorithm == "sha512"
     );
 }
 
@@ -148,7 +149,10 @@ fn a_target_without_a_supported_hash_is_not_downloaded() {
 
     let target = client.get_target_info("file").unwrap().unwrap();
     repo.requests();
-    assert_err!(client.download(&target), Error::NoSupportedHash { name } if name == "file");
+    assert_matches!(
+        client.download(&target),
+        Err(Error::NoSupportedHash { name }) if name == "file"
+    );
     assert!(repo.requests().is_empty());
 }
 
@@ -175,7 +179,10 @@ fn a_target_whose_path_could_escape_the_targets_location_is_not_fetched() {
     repo.requests();
     for path in paths {
         let target = client.get_target_info(path).unwrap().unwrap();
-        assert_err!(client.download(&target), Error::UnsafePath(unsafe_path) if unsafe_path == path);
+        assert_matches!(
+            client.download(&target),
+            Err(Error::UnsafePath(unsafe_path)) if unsafe_path == path
+        );
     }
     assert!(repo.requests().is_empty());
 }
@@ -218,18 +225,18 @@ fn reports_transport_errors_while_reading_a_target() {
         block_on(updater.download_target(&target))
     };
     let reset = io::ErrorKind::ConnectionReset;
-    assert_err!(
+    assert_matches!(
         download(|| TransportError::other(io::Error::from(io::ErrorKind::ConnectionReset))),
-        Error::Transport { name, source } if name == "file"
+        Err(Error::Transport { name, source }) if name == "file"
             && source.downcast_ref::<io::Error>().map(io::Error::kind) == Some(reset)
     );
-    assert_err!(
+    assert_matches!(
         download(|| TransportError::TooLarge),
-        Error::TooLarge { name, max: 7 } if name == "file"
+        Err(Error::TooLarge { name, max: 7 }) if name == "file"
     );
-    assert_err!(
+    assert_matches!(
         download(|| TransportError::NotFound),
-        Error::Transport { name, .. } if name == "file"
+        Err(Error::Transport { name, .. }) if name == "file"
     );
 }
 
@@ -248,9 +255,9 @@ fn downloading_to_a_file_writes_only_verified_data() {
 
     std::fs::remove_file(&destination).unwrap();
     repo.serve_target("file", b"forged!");
-    assert_err!(
+    assert_matches!(
         block_on(client.updater.download_target_to(&target, &destination)),
-        Error::HashMismatch { .. }
+        Err(Error::HashMismatch { .. })
     );
     assert_eq!(
         std::fs::read_dir(dir.path()).unwrap().count(),
@@ -330,9 +337,9 @@ fn downloading_to_a_file_reports_when_the_file_cannot_be_written() {
     std::fs::create_dir(&destination).unwrap();
     std::fs::write(destination.join("inside"), b"").unwrap();
 
-    assert_err!(
+    assert_matches!(
         block_on(client.updater.download_target_to(&target, &destination)),
-        Error::Io(_)
+        Err(Error::Io(_))
     );
     assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
 }
@@ -344,8 +351,8 @@ fn targets_downloaded_by_other_means_can_be_verified() {
     let (_repo, mut client) = repo_with_target();
     let target = client.get_target_info("file").unwrap().unwrap();
     target.verify(b"genuine").unwrap();
-    assert_err!(target.verify(b"forged!"), Error::HashMismatch { .. });
-    assert_err!(target.verify(b"genuine!"), Error::TooLarge { .. });
+    assert_matches!(target.verify(b"forged!"), Err(Error::HashMismatch { .. }));
+    assert_matches!(target.verify(b"genuine!"), Err(Error::TooLarge { .. }));
 }
 
 /// `TargetInfo::matches_file` checks a file against the trusted length and

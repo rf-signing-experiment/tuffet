@@ -5,13 +5,15 @@
 //! threshold of the root keys of the version before it and of its own root
 //! keys (see also 6.1), and is persisted as soon as it is verified.
 
+use std::assert_matches;
+
 use rftuf::crypto::Signer;
 use rftuf::metadata::{MetaFile, RoleKeys, RoleType};
 use rftuf::store::MetadataStore;
 use rftuf::{Error, UpdaterConfig};
 
 use crate::support::keys::{key, key_id};
-use crate::support::{TestRepo, assert_err, expired, far_future};
+use crate::support::{TestRepo, expired, far_future};
 
 /// 5.3.1, 5.3.3: the client downloads version N+1 of root metadata, as
 /// `N+1.root.json`, until it is not found, so it follows every key rotation
@@ -42,9 +44,9 @@ fn root_downloads_are_limited_to_root_max_length() {
 
     let mut config = UpdaterConfig::default();
     config.root_max_length = length - 1;
-    assert_err!(
+    assert_matches!(
         repo.client_with(config.clone()).refresh(),
-        Error::TooLarge { name, max } if name == "2.root.json" && max == length - 1
+        Err(Error::TooLarge { name, max }) if name == "2.root.json" && max == length - 1
     );
     config.root_max_length = length;
     repo.client_with(config).refresh().unwrap();
@@ -80,9 +82,9 @@ fn a_failed_root_download_aborts_the_update() {
     repo.publish_root();
     repo.transport.fail("2.root.json");
     let mut client = repo.client();
-    assert_err!(
+    assert_matches!(
         client.refresh(),
-        Error::Transport { name, source }
+        Err(Error::Transport { name, source })
             if name == "2.root.json" && source.to_string() == "simulated network failure"
     );
     assert_eq!(client.root_version(), 1);
@@ -122,14 +124,14 @@ fn new_root_must_be_signed_by_the_trusted_and_its_own_root_keys() {
     let mut trusted = repo.trusted();
 
     let only_new = TestRepo::sign_with(&next, &[&new_key]);
-    assert_err!(
+    assert_matches!(
         trusted.update_root(&only_new),
-        Error::SignatureThreshold { role, valid: 0, threshold: 1 } if role == "root"
+        Err(Error::SignatureThreshold { role, valid: 0, threshold: 1 }) if role == "root"
     );
     let only_old = TestRepo::sign_with(&next, &[&old_key]);
-    assert_err!(
+    assert_matches!(
         trusted.update_root(&only_old),
-        Error::SignatureThreshold { role, valid: 0, threshold: 1 } if role == "root"
+        Err(Error::SignatureThreshold { role, valid: 0, threshold: 1 }) if role == "root"
     );
     assert_eq!(trusted.root().signed().version, 1);
 
@@ -159,22 +161,22 @@ fn root_rotation_example_of_the_specification() {
     let mut trusted = repo.trusted();
 
     let one_old_three_new = TestRepo::sign_with(&next, &[&old[0], &new[0], &new[1], &new[2]]);
-    assert_err!(
+    assert_matches!(
         trusted.update_root(&one_old_three_new),
-        Error::SignatureThreshold {
+        Err(Error::SignatureThreshold {
             valid: 1,
             threshold: 2,
             ..
-        }
+        })
     );
     let two_old_two_new = TestRepo::sign_with(&next, &[&old[0], &old[1], &new[0], &new[1]]);
-    assert_err!(
+    assert_matches!(
         trusted.update_root(&two_old_two_new),
-        Error::SignatureThreshold {
+        Err(Error::SignatureThreshold {
             valid: 2,
             threshold: 3,
             ..
-        }
+        })
     );
     let two_old_three_new =
         TestRepo::sign_with(&next, &[&old[0], &old[1], &new[0], &new[1], &new[2]]);
@@ -201,9 +203,9 @@ fn a_root_key_cannot_sign_twice() {
 
     let mut trusted = repo.trusted();
     let signed_twice = serde_json::to_vec(&document).unwrap();
-    assert_err!(
+    assert_matches!(
         trusted.update_root(&signed_twice),
-        Error::InvalidMetadata(reason) if reason.contains("multiple signatures")
+        Err(Error::InvalidMetadata(reason)) if reason.contains("multiple signatures")
     );
 }
 
@@ -220,13 +222,16 @@ fn a_root_that_is_not_signed_as_required_is_discarded() {
     repo.write("2.root.json", only_new);
 
     let mut client = repo.client();
-    assert_err!(client.refresh(), Error::SignatureThreshold { role, .. } if role == "root");
+    assert_matches!(
+        client.refresh(),
+        Err(Error::SignatureThreshold { role, .. }) if role == "root"
+    );
     assert_eq!(client.root_version(), 1);
     assert_eq!(client.stored("root.json"), Some(repo.initial_root()));
     assert!(client.updater.trusted().is_none());
 
     repo.requests();
-    assert_err!(client.refresh(), Error::SignatureThreshold { .. });
+    assert_matches!(client.refresh(), Err(Error::SignatureThreshold { .. }));
     assert_eq!(repo.requests(), ["2.root.json"]);
 }
 
@@ -240,13 +245,13 @@ fn new_root_version_must_be_exactly_one_more() {
     repo.publish_root();
     repo.publish_root();
     let mut trusted = repo.trusted();
-    assert_err!(
+    assert_matches!(
         trusted.update_root(&repo.file("3.root.json")),
-        Error::VersionMismatch { role, expected: 2, actual: 3 } if role == "root"
+        Err(Error::VersionMismatch { role, expected: 2, actual: 3 }) if role == "root"
     );
-    assert_err!(
+    assert_matches!(
         trusted.update_root(&repo.file("1.root.json")),
-        Error::VersionMismatch { role, expected: 2, actual: 1 } if role == "root"
+        Err(Error::VersionMismatch { role, expected: 2, actual: 1 }) if role == "root"
     );
     trusted.update_root(&repo.file("2.root.json")).unwrap();
     trusted.update_root(&repo.file("3.root.json")).unwrap();
@@ -257,9 +262,9 @@ fn new_root_version_must_be_exactly_one_more() {
     version_3.version = 3;
     let version_3 = repo.sign("root", &version_3);
     repo.write("2.root.json", version_3);
-    assert_err!(
+    assert_matches!(
         repo.client().refresh(),
-        Error::VersionMismatch { role, expected: 2, actual: 3 } if role == "root"
+        Err(Error::VersionMismatch { role, expected: 2, actual: 3 }) if role == "root"
     );
 }
 
@@ -299,7 +304,10 @@ fn each_verified_root_is_trusted_and_persisted() {
     repo.write("3.root.json", not_signed_by_root);
 
     let mut client = repo.client();
-    assert_err!(client.refresh(), Error::SignatureThreshold { role, .. } if role == "root");
+    assert_matches!(
+        client.refresh(),
+        Err(Error::SignatureThreshold { role, .. }) if role == "root"
+    );
     assert_eq!(client.root_version(), 2);
     assert_eq!(client.stored("root.json"), Some(repo.file("2.root.json")));
 }
@@ -316,13 +324,13 @@ fn rejects_an_expired_final_root() {
 
     let mut trusted = repo.trusted();
     trusted.update_root(&repo.file("2.root.json")).unwrap();
-    assert_err!(
+    assert_matches!(
         trusted.update_timestamp(&repo.file("timestamp.json")),
-        Error::Expired { role, .. } if role == "root"
+        Err(Error::Expired { role, .. }) if role == "root"
     );
     assert!(trusted.timestamp().is_none());
 
-    assert_err!(repo.client().refresh(), Error::Expired { role, .. } if role == "root");
+    assert_matches!(repo.client().refresh(), Err(Error::Expired { role, .. }) if role == "root");
 }
 
 /// 5.3.11: "If the timestamp and / or snapshot keys have been rotated, then
@@ -338,7 +346,10 @@ fn rotating_timestamp_or_snapshot_keys_deletes_their_trusted_metadata() {
         repo.publish_root();
         // End the update right after it has updated root.
         repo.remove("timestamp.json");
-        assert_err!(client.refresh(), Error::MetadataNotFound(name) if name == "timestamp.json");
+        assert_matches!(
+            client.refresh(),
+            Err(Error::MetadataNotFound(name)) if name == "timestamp.json"
+        );
 
         assert_eq!(client.stored("root.json"), Some(repo.file("2.root.json")));
         assert_eq!(client.stored("timestamp.json"), None, "{role}");
@@ -358,7 +369,7 @@ fn rotating_timestamp_keys_deletes_their_trusted_metadata_even_if_the_update_fai
     repo.rotate_key(RoleType::Timestamp);
     repo.publish_root();
     repo.write("3.root.json", b"not root metadata".to_vec());
-    assert_err!(client.refresh(), Error::Decode(_));
+    assert_matches!(client.refresh(), Err(Error::Decode(_)));
 
     assert_eq!(client.stored("root.json"), Some(repo.file("2.root.json")));
     assert_eq!(client.stored("timestamp.json"), None);
@@ -382,9 +393,9 @@ fn persisted_root_versions_do_not_delete_the_trusted_timestamp_again() {
     repo.timestamp.version = 1;
     repo.publish_timestamp();
     let mut restarted = client.restart_with(repo.initial_root());
-    assert_err!(
+    assert_matches!(
         restarted.refresh(),
-        Error::Rollback { role, trusted: 10, new: 2 } if role == "timestamp"
+        Err(Error::Rollback { role, trusted: 10, new: 2 }) if role == "timestamp"
     );
 }
 
@@ -422,9 +433,9 @@ fn recovers_from_a_fast_forward_attack_on_timestamp() {
 
     repo.timestamp.version = 1;
     repo.publish_timestamp();
-    assert_err!(
+    assert_matches!(
         client.refresh(),
-        Error::Rollback { role, trusted: 1000, new: 2 } if role == "timestamp"
+        Err(Error::Rollback { role, trusted: 1000, new: 2 }) if role == "timestamp"
     );
 
     repo.rotate_key(RoleType::Timestamp);
@@ -452,9 +463,9 @@ fn recovers_from_a_fast_forward_attack_on_snapshot() {
 
     repo.snapshot.version = 1;
     repo.publish_snapshot();
-    assert_err!(
+    assert_matches!(
         client.refresh(),
-        Error::Rollback { role, trusted: 1000, new: 2 } if role == "snapshot"
+        Err(Error::Rollback { role, trusted: 1000, new: 2 }) if role == "snapshot"
     );
 
     repo.rotate_key(RoleType::Snapshot);
@@ -477,16 +488,16 @@ fn recovers_from_a_fast_forward_attack_on_targets() {
         .meta
         .insert("targets.json".to_owned(), MetaFile::new(999));
     repo.publish_snapshot();
-    assert_err!(
+    assert_matches!(
         client.refresh(),
-        Error::VersionMismatch { role, expected: 999, actual: 1 } if role == "targets"
+        Err(Error::VersionMismatch { role, expected: 999, actual: 1 }) if role == "targets"
     );
 
     repo.add_target("targets", "file", b"data");
     repo.commit();
-    assert_err!(
+    assert_matches!(
         client.refresh(),
-        Error::Rollback { role, trusted: 999, new: 2 } if role == "targets.json"
+        Err(Error::Rollback { role, trusted: 999, new: 2 }) if role == "targets.json"
     );
 
     repo.rotate_key(RoleType::Snapshot);

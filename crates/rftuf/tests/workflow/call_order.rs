@@ -4,10 +4,12 @@
 //! (5.3 to 5.6): root versions, then timestamp, snapshot and targets
 //! metadata. Calls made out of order fail with `Error::InvalidState`.
 
+use std::assert_matches;
+
 use rftuf::Error;
 use rftuf::trusted::TimestampUpdate;
 
-use crate::support::{Delegation, TestRepo, assert_err, expired};
+use crate::support::{Delegation, TestRepo, expired};
 
 /// The workflow in order: each step trusts what the step before it trusted,
 /// and tells what to download next.
@@ -56,9 +58,9 @@ fn root_cannot_be_updated_once_timestamp_is_loaded() {
     trusted
         .update_timestamp(&repo.file("timestamp.json"))
         .unwrap();
-    assert_err!(
+    assert_matches!(
         trusted.update_root(&repo.file("2.root.json")),
-        Error::InvalidState(_)
+        Err(Error::InvalidState(_))
     );
     assert_eq!(trusted.root().signed().version, 1);
 }
@@ -69,13 +71,13 @@ fn root_cannot_be_updated_once_timestamp_is_loaded() {
 fn snapshot_needs_timestamp() {
     let repo = TestRepo::new();
     let mut trusted = repo.trusted();
-    assert_err!(
+    assert_matches!(
         trusted.update_snapshot(&repo.file("snapshot.json")),
-        Error::InvalidState(_)
+        Err(Error::InvalidState(_))
     );
-    assert_err!(
+    assert_matches!(
         trusted.load_cached_snapshot(&repo.file("snapshot.json")),
-        Error::InvalidState(_)
+        Err(Error::InvalidState(_))
     );
 }
 
@@ -85,16 +87,16 @@ fn snapshot_needs_timestamp() {
 fn targets_need_snapshot() {
     let repo = TestRepo::new();
     let mut trusted = repo.trusted();
-    assert_err!(
+    assert_matches!(
         trusted.update_targets(&repo.file("targets.json")),
-        Error::InvalidState(_)
+        Err(Error::InvalidState(_))
     );
     trusted
         .update_timestamp(&repo.file("timestamp.json"))
         .unwrap();
-    assert_err!(
+    assert_matches!(
         trusted.update_targets(&repo.file("targets.json")),
-        Error::InvalidState(_)
+        Err(Error::InvalidState(_))
     );
 }
 
@@ -105,14 +107,14 @@ fn targets_need_snapshot() {
 fn trusted_metadata_cannot_change_once_later_steps_rely_on_it() {
     let repo = TestRepo::new();
     let mut trusted = repo.trusted_with_snapshot();
-    assert_err!(
+    assert_matches!(
         trusted.update_timestamp(&repo.file("timestamp.json")),
-        Error::InvalidState(_)
+        Err(Error::InvalidState(_))
     );
     trusted.update_targets(&repo.file("targets.json")).unwrap();
-    assert_err!(
+    assert_matches!(
         trusted.update_snapshot(&repo.file("snapshot.json")),
-        Error::InvalidState(_)
+        Err(Error::InvalidState(_))
     );
 }
 
@@ -122,16 +124,16 @@ fn trusted_metadata_cannot_change_once_later_steps_rely_on_it() {
 fn cached_metadata_is_loaded_before_new_metadata() {
     let repo = TestRepo::new();
     let mut trusted = repo.trusted_with_timestamp();
-    assert_err!(
+    assert_matches!(
         trusted.load_cached_timestamp(&repo.file("timestamp.json")),
-        Error::InvalidState(_)
+        Err(Error::InvalidState(_))
     );
     trusted
         .update_snapshot(&repo.file("snapshot.json"))
         .unwrap();
-    assert_err!(
+    assert_matches!(
         trusted.load_cached_snapshot(&repo.file("snapshot.json")),
-        Error::InvalidState(_)
+        Err(Error::InvalidState(_))
     );
 }
 
@@ -155,13 +157,13 @@ fn a_cached_timestamp_is_only_used_while_it_has_not_expired() {
     trusted
         .load_cached_timestamp(&repo.file("timestamp.json"))
         .unwrap();
-    assert_err!(
+    assert_matches!(
         trusted.load_cached_snapshot(&repo.file("snapshot.json")),
-        Error::Expired { role, .. } if role == "timestamp"
+        Err(Error::Expired { role, .. }) if role == "timestamp"
     );
-    assert_err!(
+    assert_matches!(
         trusted.update_snapshot(&repo.file("snapshot.json")),
-        Error::Expired { role, .. } if role == "timestamp"
+        Err(Error::Expired { role, .. }) if role == "timestamp"
     );
 }
 
@@ -175,9 +177,9 @@ fn delegated_targets_need_their_delegating_role() {
     repo.commit();
     let mut trusted = repo.trusted_with_targets();
 
-    assert_err!(
+    assert_matches!(
         trusted.update_delegated_targets(&repo.file("b.json"), "b", "a"),
-        Error::InvalidState(_)
+        Err(Error::InvalidState(_))
     );
     trusted
         .update_delegated_targets(&repo.file("a.json"), "a", "targets")

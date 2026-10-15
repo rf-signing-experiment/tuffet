@@ -1,6 +1,8 @@
 //! Signing: in-memory `PrivateKey`s, and the `Signer` trait for keys held
 //! elsewhere.
 
+use std::assert_matches;
+
 use rftuf::Error;
 use rftuf::crypto::{CryptoError, PrivateKey, Signer, public_key_from_pem};
 use rftuf::metadata::{Key, Metadata, RoleType, Root, SignatureScheme, Targets};
@@ -17,18 +19,18 @@ fn pkcs8_private_keys_load_from_pem_and_der() {
 
 #[test]
 fn rejects_what_is_not_a_pkcs8_private_key() {
-    assert!(matches!(
+    assert_matches!(
         PrivateKey::from_pkcs8_der(b"not a key"),
         Err(CryptoError::InvalidPrivateKey(_))
-    ));
-    assert!(matches!(
+    );
+    assert_matches!(
         PrivateKey::from_pkcs8_pem("not a key"),
         Err(CryptoError::InvalidPrivateKey(_))
-    ));
-    assert!(matches!(
+    );
+    assert_matches!(
         PrivateKey::from_pkcs8_pem(&data::crypto_text("p256.pub.pem")),
         Err(CryptoError::InvalidPrivateKey(reason)) if reason.contains("PRIVATE KEY")
-    ));
+    );
 }
 
 /// A key held elsewhere, here simulated with an in-memory key. Its public key
@@ -89,10 +91,10 @@ fn signing_failures_are_reported() {
     let key = PrivateKey::generate(&SignatureScheme::Ed25519).unwrap();
     let unavailable = Unavailable(key.public_key().clone());
     let mut targets = Metadata::<Targets>::new(Targets::new(far_future())).unwrap();
-    assert!(matches!(
+    assert_matches!(
         targets.sign(&unavailable),
         Err(Error::Crypto(CryptoError::Signing(_)))
-    ));
+    );
     assert!(targets.signatures().is_empty());
 }
 

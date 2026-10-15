@@ -1,6 +1,8 @@
 //! 4.6 File formats: timestamp.json, which "indicates the latest version of
 //! the snapshot metadata".
 
+use std::assert_matches;
+
 use rftuf::Error;
 use rftuf::metadata::{MetaFile, Metadata, Timestamp};
 use serde_json::json;
@@ -46,10 +48,10 @@ fn meta_hashes_must_not_be_empty() {
 #[test]
 fn a_new_timestamp_must_describe_snapshot_json() {
     let mut timestamp = Timestamp::new(far_future());
-    assert!(matches!(
+    assert_matches!(
         Metadata::<Timestamp>::new(timestamp.clone()),
         Err(Error::InvalidMetadata(_))
-    ));
+    );
     timestamp
         .meta
         .insert("snapshot.json".to_owned(), MetaFile::new(1));

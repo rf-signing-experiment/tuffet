@@ -1,5 +1,6 @@
 //! Tests against a local HTTP server.
 
+use std::assert_matches;
 use std::collections::HashMap;
 use std::convert::Infallible;
 use std::net::SocketAddr;
@@ -106,23 +107,26 @@ async fn fetches_files_and_maps_status_codes() {
     assert_eq!(read(fetched).await, b"target");
     assert_eq!(log.lock().unwrap()[1], "/targets/dir/a%20file%3F.txt");
 
-    assert!(matches!(
-        transport.fetch_metadata("2.root.json", u64::MAX).await,
+    assert_matches!(
+        transport
+            .fetch_metadata("2.root.json", u64::MAX)
+            .await
+            .map(drop),
         Err(TransportError::NotFound)
-    ));
+    );
     // Fetching "N" below `/status/` responds with status N.
     let status = HttpTransport::new(
         format!("http://{address}/status/").parse().unwrap(),
         format!("http://{address}/status/").parse().unwrap(),
     );
-    assert!(matches!(
-        status.fetch_metadata("403", u64::MAX).await,
+    assert_matches!(
+        status.fetch_metadata("403", u64::MAX).await.map(drop),
         Err(TransportError::NotFound)
-    ));
-    assert!(matches!(
-        status.fetch_target("500", u64::MAX).await,
+    );
+    assert_matches!(
+        status.fetch_target("500", u64::MAX).await.map(drop),
         Err(TransportError::Other(_))
-    ));
+    );
 }
 
 /// A response whose `Content-Length` exceeds the maximum length is rejected
@@ -132,10 +136,13 @@ async fn rejects_responses_longer_than_the_maximum_length() {
     let files = HashMap::from([("/metadata/timestamp.json".to_owned(), vec![b'x'; 100])]);
     let (address, _) = serve(files).await;
     let transport = transport(address);
-    assert!(matches!(
-        transport.fetch_metadata("timestamp.json", 99).await,
+    assert_matches!(
+        transport
+            .fetch_metadata("timestamp.json", 99)
+            .await
+            .map(drop),
         Err(TransportError::TooLarge)
-    ));
+    );
     let exact = transport.fetch_metadata("timestamp.json", 100).await;
     assert_eq!(read(exact).await, vec![b'x'; 100]);
 }
@@ -212,8 +219,8 @@ async fn updates_from_the_reference_implementations_repository_over_http() {
     assert!(missing.is_none());
     let mut forged = target.clone();
     forged.file.length -= 1;
-    assert!(matches!(
+    assert_matches!(
         updater.download_target(&forged).await,
         Err(Error::TooLarge { .. })
-    ));
+    );
 }

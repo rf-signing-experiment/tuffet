@@ -2,6 +2,8 @@
 //! `{"signed": ROLE, "signatures": [{"keyid": KEYID, "sig": SIGNATURE}, ...]}`,
 //! where ROLE is "A dictionary whose "_type" field describes the role type".
 
+use std::assert_matches;
+
 use rftuf::Error;
 use rftuf::metadata::{MetaFile, Metadata, Root, Targets, Timestamp};
 use serde_json::{Value, json};
@@ -43,10 +45,10 @@ fn rejects_documents_that_are_not_signed_metadata() {
         .unwrap()
         .remove("sig");
 
-    assert!(matches!(
+    assert_matches!(
         Metadata::<Timestamp>::from_bytes(b"not json"),
         Err(Error::Decode(_))
-    ));
+    );
     for (case, document) in [
         ("an array", json!([])),
         (
@@ -60,11 +62,9 @@ fn rejects_documents_that_are_not_signed_metadata() {
         ("a signature without sig", no_sig),
     ] {
         let bytes = serde_json::to_vec(&document).unwrap();
-        assert!(
-            matches!(
-                Metadata::<Timestamp>::from_bytes(&bytes),
-                Err(Error::Decode(_))
-            ),
+        assert_matches!(
+            Metadata::<Timestamp>::from_bytes(&bytes),
+            Err(Error::Decode(_)),
             "{case}"
         );
     }
@@ -76,14 +76,11 @@ fn rejects_documents_that_are_not_signed_metadata() {
 #[test]
 fn the_type_field_must_name_the_role() {
     let result = Metadata::<Root>::from_bytes(&data::python_tuf("timestamp.json"));
-    assert!(matches!(result, Err(Error::Decode(e)) if e.to_string().contains("_type")));
+    assert_matches!(result, Err(Error::Decode(e)) if e.to_string().contains("_type"));
 
     let mut untyped = python_tuf_document("timestamp.json")["signed"].take();
     untyped.as_object_mut().unwrap().remove("_type");
-    assert!(matches!(
-        decode::<Timestamp>(untyped),
-        Err(Error::Decode(_))
-    ));
+    assert_matches!(decode::<Timestamp>(untyped), Err(Error::Decode(_)));
 }
 
 /// 4.2.1: "The keyid MUST be unique in the "signatures" array: multiple
@@ -98,8 +95,9 @@ fn key_ids_must_be_unique_in_signatures() {
         .push(signature);
     let result = Metadata::<Timestamp>::from_bytes(&serde_json::to_vec(&document).unwrap());
     // The error names the key.
-    assert!(
-        matches!(result, Err(Error::InvalidMetadata(reason)) if reason.contains("multiple signatures by key 8a1c4a3ac2d515dec982ba9910c5fd79b91ae57f625b9cff25d06bf0a61c1758"))
+    assert_matches!(
+        result,
+        Err(Error::InvalidMetadata(reason)) if reason.contains("multiple signatures by key 8a1c4a3ac2d515dec982ba9910c5fd79b91ae57f625b9cff25d06bf0a61c1758")
     );
 }
 
@@ -127,10 +125,7 @@ fn signatures_are_hex_encoded() {
     assert_eq!(reencoded["signatures"][0]["sig"], json!(sig));
 
     for invalid in ["xyz0", "abc", "0x00"] {
-        assert!(
-            matches!(with_sig(invalid), Err(Error::Decode(_))),
-            "{invalid}"
-        );
+        assert_matches!(with_sig(invalid), Err(Error::Decode(_)), "{invalid}");
     }
 }
 
@@ -172,10 +167,10 @@ fn signing_again_replaces_the_signature_of_the_key() {
 #[test]
 fn payloads_are_validated_before_signing() {
     let mut timestamp = Timestamp::new(far_future());
-    assert!(matches!(
+    assert_matches!(
         Metadata::<Timestamp>::new(timestamp.clone()),
         Err(Error::InvalidMetadata(reason)) if reason.contains("snapshot.json")
-    ));
+    );
     timestamp
         .meta
         .insert("snapshot.json".to_owned(), MetaFile::new(1));

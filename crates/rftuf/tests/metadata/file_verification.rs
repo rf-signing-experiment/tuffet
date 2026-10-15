@@ -5,6 +5,8 @@
 //! `FileVerifier` checks a file as it is downloaded, so that a download can
 //! be cut off as soon as it is longer than allowed (endless data attacks).
 
+use std::assert_matches;
+
 use rftuf::Error;
 use rftuf::crypto::HashAlgorithm;
 use rftuf::metadata::{FileVerifier, Hashes, MetaFile, TargetFile};
@@ -29,32 +31,32 @@ fn accepts_a_matching_file_in_chunks() {
 fn rejects_a_file_as_soon_as_it_is_too_long() {
     let mut verifier = FileVerifier::for_target("t", &target(b"hello world")).unwrap();
     verifier.update(b"hello world").unwrap();
-    assert!(matches!(
+    assert_matches!(
         verifier.update(b"!"),
         Err(Error::TooLarge { name, max: 11 }) if name == "t"
-    ));
+    );
 }
 
 #[test]
 fn rejects_a_file_shorter_than_its_length() {
     let result = target(b"hello world").verify("t", b"hello");
-    assert!(matches!(
+    assert_matches!(
         result,
         Err(Error::LengthMismatch {
             expected: 11,
             actual: 5,
             ..
         })
-    ));
+    );
 }
 
 #[test]
 fn rejects_a_file_with_other_content() {
     let result = target(b"hello world").verify("t", b"hello World");
-    assert!(matches!(
+    assert_matches!(
         result,
         Err(Error::HashMismatch { name, algorithm }) if name == "t" && algorithm == "sha256"
-    ));
+    );
 }
 
 /// Every listed hash rftuf supports must match, not just one of them.
@@ -63,10 +65,10 @@ fn every_supported_hash_must_match() {
     let mut expected = target(b"data");
     expected.hashes.insert("sha512", vec![0; 64]);
     let result = expected.verify("t", b"data");
-    assert!(matches!(
+    assert_matches!(
         result,
         Err(Error::HashMismatch { algorithm, .. }) if algorithm == "sha512"
-    ));
+    );
 }
 
 /// Hashes of algorithms rftuf does not support are ignored, but a file can
@@ -80,10 +82,10 @@ fn unsupported_hashes_are_ignored_but_one_must_be_supported() {
     let mut unverifiable = Hashes::new();
     unverifiable.insert("md5", vec![0; 16]);
     expected.hashes = unverifiable;
-    assert!(matches!(
+    assert_matches!(
         FileVerifier::for_target("t", &expected),
         Err(Error::NoSupportedHash { name }) if name == "t"
-    ));
+    );
 }
 
 /// METAFILES LENGTH: when it is omitted, "the client MUST use a custom
@@ -98,7 +100,7 @@ fn metadata_without_a_listed_length_is_limited_by_a_maximum() {
     let result = FileVerifier::for_meta("m", &meta, 4)
         .unwrap()
         .verify(b"12345");
-    assert!(matches!(result, Err(Error::TooLarge { max: 4, .. })));
+    assert_matches!(result, Err(Error::TooLarge { max: 4, .. }));
 }
 
 /// METAFILES LENGTH and HASHES are checked when they are listed, and a
@@ -107,24 +109,24 @@ fn metadata_without_a_listed_length_is_limited_by_a_maximum() {
 fn metadata_is_checked_against_a_listed_length_and_hashes() {
     let meta = MetaFile::from_bytes(1, b"metadata", &[HashAlgorithm::Sha256]);
     meta.verify("m", b"metadata").unwrap();
-    assert!(matches!(
+    assert_matches!(
         meta.verify("m", b"Metadata"),
         Err(Error::HashMismatch { .. })
-    ));
-    assert!(matches!(
+    );
+    assert_matches!(
         meta.verify("m", b"meta"),
         Err(Error::LengthMismatch {
             expected: 8,
             actual: 4,
             ..
         })
-    ));
-    assert!(matches!(
+    );
+    assert_matches!(
         FileVerifier::for_meta("m", &meta, 1000)
             .unwrap()
             .verify(b"metadata, longer"),
         Err(Error::TooLarge { max: 8, .. })
-    ));
+    );
 }
 
 /// METAFILES HASHES: when they are omitted, "the repository MUST guarantee

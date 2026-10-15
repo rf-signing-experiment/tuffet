@@ -6,6 +6,8 @@
 //! 5.6.3). The workflow tests check which keys each step uses; these tests
 //! check how signatures are counted.
 
+use std::assert_matches;
+
 use rftuf::Error;
 use rftuf::crypto::{PrivateKey, Signer};
 use rftuf::metadata::{
@@ -42,23 +44,23 @@ fn a_threshold_of_the_roles_keys_must_sign() {
     let (a, b, c) = (key("a"), key("b"), key("c"));
     let root = root_trusting(&[&a, &b, &c], 2);
     let mut targets = unsigned_targets();
-    assert!(matches!(
+    assert_matches!(
         root.verify_role(&targets),
         Err(Error::SignatureThreshold {
             valid: 0,
             threshold: 2,
             ..
         })
-    ));
+    );
     targets.sign(a.as_ref()).unwrap();
-    assert!(matches!(
+    assert_matches!(
         root.verify_role(&targets),
         Err(Error::SignatureThreshold {
             valid: 1,
             threshold: 2,
             ..
         })
-    ));
+    );
     targets.sign(b.as_ref()).unwrap();
     root.verify_role(&targets).unwrap();
     targets.sign(c.as_ref()).unwrap();
@@ -79,10 +81,10 @@ fn signatures_by_other_keys_do_not_count() {
     let mut targets = unsigned_targets();
     targets.sign(other_role.as_ref()).unwrap();
     targets.sign(unknown.as_ref()).unwrap();
-    assert!(matches!(
+    assert_matches!(
         root.verify_role(&targets),
         Err(Error::SignatureThreshold { valid: 0, .. })
-    ));
+    );
 }
 
 /// An invalid signature by a key the role lists does not count.
@@ -94,14 +96,14 @@ fn invalid_signatures_do_not_count() {
     targets.sign(a.as_ref()).unwrap();
     let signature_of_other_data = b.sign(b"other data").unwrap();
     targets.add_signature(Signature::new(key_id(&b), signature_of_other_data));
-    assert!(matches!(
+    assert_matches!(
         root.verify_role(&targets),
         Err(Error::SignatureThreshold {
             valid: 1,
             threshold: 2,
             ..
         })
-    ));
+    );
 }
 
 /// "each KEY MUST only contribute one SIGNATURE": a key that a role lists
@@ -128,14 +130,14 @@ fn a_key_counts_once_even_under_several_key_ids() {
     let sig = signer.sign(targets.canonical_signed()).unwrap();
     targets.add_signature(Signature::new(id, sig.clone()));
     targets.add_signature(Signature::new(variant_id, sig));
-    assert!(matches!(
+    assert_matches!(
         root.verify_role(&targets),
         Err(Error::SignatureThreshold {
             valid: 1,
             threshold: 2,
             ..
         })
-    ));
+    );
 }
 
 /// Keys whose type or scheme rftuf does not support (4.2.2: "TUF is not
@@ -155,10 +157,10 @@ fn keys_rftuf_cannot_use_are_ignored() {
 
     let mut targets = unsigned_targets();
     targets.add_signature(Signature::new(unsupported_id, vec![0; 64]));
-    assert!(matches!(
+    assert_matches!(
         root.verify_role(&targets),
         Err(Error::SignatureThreshold { valid: 0, .. })
-    ));
+    );
     targets.sign(supported.as_ref()).unwrap();
     root.verify_role(&targets).unwrap();
 }
@@ -171,10 +173,10 @@ fn key_ids_without_a_key_count_nothing() {
     root.roles.targets.keyids.push(key_id(&signer));
     let mut targets = unsigned_targets();
     targets.sign(signer.as_ref()).unwrap();
-    assert!(matches!(
+    assert_matches!(
         root.verify_role(&targets),
         Err(Error::SignatureThreshold { valid: 0, .. })
-    ));
+    );
 }
 
 /// Delegated targets metadata is verified with the keys and threshold that
@@ -201,18 +203,18 @@ fn delegated_roles_are_verified_with_the_keys_of_their_delegation() {
     let mut a = unsigned_targets();
     a.sign(a1.as_ref()).unwrap();
     a.sign(other.as_ref()).unwrap();
-    assert!(matches!(
+    assert_matches!(
         delegating.verify_delegate("a", &a),
         Err(Error::SignatureThreshold { role, valid: 1, threshold: 2 }) if role == "a"
-    ));
+    );
     a.sign(a2.as_ref()).unwrap();
     delegating.verify_delegate("a", &a).unwrap();
-    assert!(matches!(
+    assert_matches!(
         delegating.verify_delegate("b", &a),
         Err(Error::UnknownDelegation(role)) if role == "b"
-    ));
-    assert!(matches!(
+    );
+    assert_matches!(
         Targets::new(far_future()).verify_delegate("a", &a),
         Err(Error::UnknownDelegation(role)) if role == "a"
-    ));
+    );
 }

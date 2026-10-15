@@ -2,6 +2,8 @@
 //! metadata lists target files (TARGETS) and may delegate trust for some of
 //! them to other roles (DELEGATIONS); delegated roles use the same format.
 
+use std::assert_matches;
+
 use rftuf::Error;
 use rftuf::metadata::{HexBytes, Targets};
 use serde_json::{Value, json};
@@ -153,7 +155,7 @@ fn delegations_must_say_whether_they_are_terminating() {
     let payload = with_delegated_role(|role| {
         role.as_object_mut().unwrap().remove("terminating");
     });
-    assert!(matches!(decode::<Targets>(payload), Err(Error::Decode(_))));
+    assert_matches!(decode::<Targets>(payload), Err(Error::Decode(_)));
 }
 
 /// 4.5 (prioritized delegations): "the "roles" key in the DELEGATIONS object

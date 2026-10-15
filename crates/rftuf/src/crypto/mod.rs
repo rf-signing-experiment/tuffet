@@ -140,6 +140,7 @@ impl HashAlgorithm {
 }
 
 /// An incremental hash computation, created with [`HashAlgorithm::hasher`].
+#[derive(Debug)]
 pub struct Hasher(backend::Hasher);
 
 impl Hasher {

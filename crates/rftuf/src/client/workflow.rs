@@ -24,6 +24,7 @@ const ROLE_NAME: &AsciiSet = &NON_ALPHANUMERIC
     .remove(b'_')
     .remove(b'~');
 
+#[derive(Debug)]
 pub(super) struct Workflow<T, S> {
     pub(super) transport: T,
     pub(super) store: S,

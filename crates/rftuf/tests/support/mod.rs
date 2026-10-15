@@ -10,7 +10,7 @@
 //!
 //! Each test target includes this module with `#[path]`, and uses only part
 //! of it.
-#![allow(dead_code, unused_imports, unused_macros)]
+#![allow(dead_code, unused_imports)]
 
 pub mod client;
 pub mod data;
@@ -40,27 +40,3 @@ pub fn expired() -> jiff::Timestamp {
 pub fn far_future() -> jiff::Timestamp {
     now() + SignedDuration::from_hours(100 * 365 * 24)
 }
-
-/// Asserts that `result` is an `Err` whose error matches `pattern` (and
-/// `guard`), and shows what it is otherwise.
-///
-/// ```ignore
-/// assert_err!(trusted.update_timestamp(&old), Error::Rollback { trusted: 2, new: 1, .. });
-/// assert_err!(client.refresh(), Error::Expired { role, .. } if role == "snapshot");
-/// ```
-macro_rules! assert_err {
-    ($result:expr, $pattern:pat $(if $guard:expr)? $(,)?) => {
-        match $result {
-            Err($pattern) $(if $guard)? => {}
-            Err(other) => panic!(
-                "expected an error matching `{}`, got {other:?}",
-                stringify!($pattern $(if $guard)?)
-            ),
-            Ok(_) => panic!(
-                "expected an error matching `{}`, got Ok",
-                stringify!($pattern $(if $guard)?)
-            ),
-        }
-    };
-}
-pub(crate) use assert_err;

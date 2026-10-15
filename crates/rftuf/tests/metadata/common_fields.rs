@@ -2,6 +2,8 @@
 //! described for root.json (4.3), and each other role refers to them ("are
 //! the same as is described for the root.json file").
 
+use std::assert_matches;
+
 use rftuf::Error;
 use rftuf::metadata::{Root, Snapshot, Targets, Timestamp};
 use serde_json::{Value, json};
@@ -57,9 +59,10 @@ fn spec_version_must_have_the_supported_major_version() {
             ("", "malformed spec_version"),
         ] {
             let result = with(unsupported);
-            assert!(
-                matches!(&result, Err(Error::InvalidMetadata(r)) if r.contains(reason)),
-                "{role} {unsupported:?}: {result:?}"
+            assert_matches!(
+                result,
+                Err(Error::InvalidMetadata(r)) if r.contains(reason),
+                "{role} {unsupported:?}"
             );
         }
     }
@@ -77,16 +80,14 @@ fn version_must_be_an_integer_greater_than_zero() {
         with(json!(1)).unwrap();
         with(json!(u64::MAX)).unwrap();
         let zero = with(json!(0));
-        assert!(
-            matches!(&zero, Err(Error::InvalidMetadata(r)) if r.contains("version must be greater than 0")),
-            "{role}: {zero:?}"
+        assert_matches!(
+            zero,
+            Err(Error::InvalidMetadata(r)) if r.contains("version must be greater than 0"),
+            "{role}"
         );
         for not_an_integer in [json!(-1), json!(1.0), json!("1"), json!(null)] {
             let result = with(not_an_integer.clone());
-            assert!(
-                matches!(result, Err(Error::Decode(_))),
-                "{role} {not_an_integer}"
-            );
+            assert_matches!(result, Err(Error::Decode(_)), "{role} {not_an_integer}");
         }
     }
 }
@@ -99,8 +100,9 @@ fn common_fields_are_required() {
         for field in ["_type", "spec_version", "version", "expires"] {
             let mut payload = payload.clone();
             payload.as_object_mut().unwrap().remove(field);
-            assert!(
-                matches!(decode(payload), Err(Error::Decode(_))),
+            assert_matches!(
+                decode(payload),
+                Err(Error::Decode(_)),
                 "{role} without {field}"
             );
         }

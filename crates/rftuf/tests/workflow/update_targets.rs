@@ -7,11 +7,13 @@
 //! those their delegating role lists (3.1.2.1: "Delegated target roles are
 //! authorized by the keys listed in the directly delegating target role").
 
+use std::assert_matches;
+
 use jiff::SignedDuration;
 use rftuf::metadata::RoleType;
 use rftuf::{Error, UpdaterConfig};
 
-use crate::support::{Delegation, TestRepo, assert_err, expired};
+use crate::support::{Delegation, TestRepo, expired};
 
 /// A repository where the top-level targets role delegates to "a".
 fn delegating_to_a(repo: TestRepo) -> TestRepo {
@@ -35,9 +37,9 @@ fn targets_downloads_are_limited_to_the_length_listed_in_snapshot() {
 
     let mut config = UpdaterConfig::default();
     config.targets_max_length = length + 10;
-    assert_err!(
+    assert_matches!(
         repo.client_with(config).refresh(),
-        Error::TooLarge { name, max } if name == "targets.json" && max == length
+        Err(Error::TooLarge { name, max }) if name == "targets.json" && max == length
     );
 }
 
@@ -50,9 +52,9 @@ fn targets_downloads_are_limited_to_targets_max_length() {
 
     let mut config = UpdaterConfig::default();
     config.targets_max_length = length - 1;
-    assert_err!(
+    assert_matches!(
         repo.client_with(config.clone()).refresh(),
-        Error::TooLarge { name, max } if name == "targets.json" && max == length - 1
+        Err(Error::TooLarge { name, max }) if name == "targets.json" && max == length - 1
     );
     config.targets_max_length = length;
     repo.client_with(config).refresh().unwrap();
@@ -70,9 +72,9 @@ fn targets_must_match_the_hashes_listed_in_snapshot() {
 
     let mut other = repo.targets["targets"].clone();
     other.targets.clear();
-    assert_err!(
+    assert_matches!(
         trusted.update_targets(&repo.sign("targets", &other)),
-        Error::HashMismatch { name, .. } if name == "targets.json"
+        Err(Error::HashMismatch { name, .. }) if name == "targets.json"
     );
     trusted.update_targets(&repo.file("targets.json")).unwrap();
 }
@@ -87,14 +89,14 @@ fn targets_must_be_signed_by_a_threshold_of_targets_keys() {
     let payload = &repo.targets["targets"];
 
     let by_snapshot_key = repo.sign("snapshot", payload);
-    assert_err!(
+    assert_matches!(
         trusted.update_targets(&by_snapshot_key),
-        Error::SignatureThreshold { role, valid: 0, threshold: 2 } if role == "targets"
+        Err(Error::SignatureThreshold { role, valid: 0, threshold: 2 }) if role == "targets"
     );
     let by_one_key = TestRepo::sign_with(payload, &[&keys[0]]);
-    assert_err!(
+    assert_matches!(
         trusted.update_targets(&by_one_key),
-        Error::SignatureThreshold { role, valid: 1, threshold: 2 } if role == "targets"
+        Err(Error::SignatureThreshold { role, valid: 1, threshold: 2 }) if role == "targets"
     );
     trusted.update_targets(&repo.file("targets.json")).unwrap();
 }
@@ -107,9 +109,9 @@ fn targets_version_must_match_snapshot() {
     let mut trusted = repo.trusted_with_snapshot();
     let mut newer = repo.targets["targets"].clone();
     newer.version = 5;
-    assert_err!(
+    assert_matches!(
         trusted.update_targets(&repo.sign("targets", &newer)),
-        Error::VersionMismatch { role, expected: 1, actual: 5 } if role == "targets"
+        Err(Error::VersionMismatch { role, expected: 1, actual: 5 }) if role == "targets"
     );
 }
 
@@ -122,13 +124,13 @@ fn rejects_expired_targets() {
     repo.commit();
 
     let mut trusted = repo.trusted_with_snapshot();
-    assert_err!(
+    assert_matches!(
         trusted.update_targets(&repo.file("targets.json")),
-        Error::Expired { role, .. } if role == "targets"
+        Err(Error::Expired { role, .. }) if role == "targets"
     );
     assert!(trusted.targets().is_none());
 
-    assert_err!(repo.client().refresh(), Error::Expired { role, .. } if role == "targets");
+    assert_matches!(repo.client().refresh(), Err(Error::Expired { role, .. }) if role == "targets");
 }
 
 /// 5.6.6: "The client MUST write the file to non-volatile storage as
@@ -163,13 +165,13 @@ fn targets_metadata_must_be_listed_in_snapshot() {
     repo.publish_snapshot();
 
     let mut trusted = repo.trusted_with_snapshot();
-    assert_err!(
+    assert_matches!(
         trusted.update_targets(&repo.file("targets.json")),
-        Error::NotInSnapshot(name) if name == "targets.json"
+        Err(Error::NotInSnapshot(name)) if name == "targets.json"
     );
-    assert_err!(
+    assert_matches!(
         repo.client().refresh(),
-        Error::NotInSnapshot(name) if name == "targets.json"
+        Err(Error::NotInSnapshot(name)) if name == "targets.json"
     );
 }
 
@@ -183,14 +185,14 @@ fn delegated_targets_must_be_signed_by_a_threshold_of_the_delegated_keys() {
     let mut trusted = repo.trusted_with_targets();
 
     let by_targets_key = repo.sign("targets", payload);
-    assert_err!(
+    assert_matches!(
         trusted.update_delegated_targets(&by_targets_key, "a", "targets"),
-        Error::SignatureThreshold { role, valid: 0, threshold: 2 } if role == "a"
+        Err(Error::SignatureThreshold { role, valid: 0, threshold: 2 }) if role == "a"
     );
     let by_one_key = TestRepo::sign_with(payload, &[&keys[0]]);
-    assert_err!(
+    assert_matches!(
         trusted.update_delegated_targets(&by_one_key, "a", "targets"),
-        Error::SignatureThreshold { role, valid: 1, threshold: 2 } if role == "a"
+        Err(Error::SignatureThreshold { role, valid: 1, threshold: 2 }) if role == "a"
     );
     trusted
         .update_delegated_targets(&repo.file("a.json"), "a", "targets")
@@ -207,25 +209,25 @@ fn delegated_targets_can_only_be_trusted_through_a_delegation() {
     let mut trusted = repo.trusted_with_targets();
     let a = repo.file("a.json");
 
-    assert_err!(
+    assert_matches!(
         trusted.update_delegated_targets(&a, "a", "root"),
-        Error::UnknownDelegation(role) if role == "a"
+        Err(Error::UnknownDelegation(role)) if role == "a"
     );
     trusted
         .update_delegated_targets(&a, "a", "targets")
         .unwrap();
     // "a" delegates neither to itself nor to the top-level targets role.
-    assert_err!(
+    assert_matches!(
         trusted.update_delegated_targets(&a, "a", "a"),
-        Error::UnknownDelegation(role) if role == "a"
+        Err(Error::UnknownDelegation(role)) if role == "a"
     );
-    assert_err!(
+    assert_matches!(
         trusted.delegated_targets("a", "a"),
-        Error::UnknownDelegation(role) if role == "a"
+        Err(Error::UnknownDelegation(role)) if role == "a"
     );
-    assert_err!(
+    assert_matches!(
         trusted.update_delegated_targets(&repo.file("targets.json"), "targets", "a"),
-        Error::UnknownDelegation(role) if role == "targets"
+        Err(Error::UnknownDelegation(role)) if role == "targets"
     );
 }
 
@@ -255,13 +257,13 @@ fn a_role_must_satisfy_each_delegation_it_is_used_through() {
         .update_delegated_targets(&repo.file("shared.json"), "shared", "a")
         .unwrap();
     assert!(trusted.delegated_targets("shared", "a").unwrap().is_some());
-    assert_err!(
+    assert_matches!(
         trusted.delegated_targets("shared", "b"),
-        Error::SignatureThreshold { role, valid: 0, threshold: 1 } if role == "shared"
+        Err(Error::SignatureThreshold { role, valid: 0, threshold: 1 }) if role == "shared"
     );
-    assert_err!(
+    assert_matches!(
         trusted.update_delegated_targets(&repo.file("shared.json"), "shared", "b"),
-        Error::SignatureThreshold { role, valid: 0, threshold: 1 } if role == "shared"
+        Err(Error::SignatureThreshold { role, valid: 0, threshold: 1 }) if role == "shared"
     );
 }
 
@@ -274,9 +276,9 @@ fn delegated_targets_must_match_the_hashes_listed_in_snapshot() {
     let mut other = repo.targets["a"].clone();
     other.expires += SignedDuration::from_hours(24);
 
-    assert_err!(
+    assert_matches!(
         trusted.update_delegated_targets(&repo.sign("a", &other), "a", "targets"),
-        Error::HashMismatch { name, .. } if name == "a.json"
+        Err(Error::HashMismatch { name, .. }) if name == "a.json"
     );
 }
 
@@ -289,9 +291,9 @@ fn delegated_targets_version_must_match_snapshot() {
     let mut newer = repo.targets["a"].clone();
     newer.version += 1;
 
-    assert_err!(
+    assert_matches!(
         trusted.update_delegated_targets(&repo.sign("a", &newer), "a", "targets"),
-        Error::VersionMismatch { role, expected: 1, actual: 2 } if role == "a"
+        Err(Error::VersionMismatch { role, expected: 1, actual: 2 }) if role == "a"
     );
 }
 
@@ -304,9 +306,9 @@ fn rejects_expired_delegated_targets() {
     repo.commit();
     let mut trusted = repo.trusted_with_targets();
 
-    assert_err!(
+    assert_matches!(
         trusted.update_delegated_targets(&repo.file("a.json"), "a", "targets"),
-        Error::Expired { role, .. } if role == "a"
+        Err(Error::Expired { role, .. }) if role == "a"
     );
 }
 
@@ -319,9 +321,9 @@ fn delegated_targets_must_be_listed_in_snapshot() {
     repo.publish_snapshot();
     let mut trusted = repo.trusted_with_targets();
 
-    assert_err!(
+    assert_matches!(
         trusted.update_delegated_targets(&repo.file("a.json"), "a", "targets"),
-        Error::NotInSnapshot(name) if name == "a.json"
+        Err(Error::NotInSnapshot(name)) if name == "a.json"
     );
 }
 

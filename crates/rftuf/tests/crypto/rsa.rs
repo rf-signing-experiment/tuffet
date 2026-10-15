@@ -6,6 +6,8 @@
 //! 2048 bits". To limit the cost of verification, rftuf also rejects keys of
 //! more than 8192 bits.
 
+use std::assert_matches;
+
 use rftuf::crypto::{CryptoError, PrivateKey, Signer, public_key_from_pem, verify_signature};
 use rftuf::metadata::SignatureScheme;
 
@@ -48,7 +50,7 @@ fn salt_lengths() {
 
     let maximum_salt = verify_signature(&key, &message(), &data::crypto("rsa-pss-saltmax.sig"));
     if cfg!(feature = "aws-lc-rs") {
-        assert!(matches!(maximum_salt, Err(CryptoError::BadSignature)));
+        assert_matches!(maximum_salt, Err(CryptoError::BadSignature));
     } else {
         maximum_salt.unwrap();
     }
@@ -60,10 +62,10 @@ fn malformed_signatures_are_rejected() {
     let key = key(SignatureScheme::RsassaPssSha256, "rsa.pub.pem");
     let valid = data::crypto("rsa-pss-saltdigest.sig");
     for malformed in [&[][..], &valid[1..], &[0; 256]] {
-        assert!(matches!(
+        assert_matches!(
             verify_signature(&key, &message(), malformed),
             Err(CryptoError::BadSignature)
-        ));
+        );
     }
 }
 
@@ -71,17 +73,17 @@ fn malformed_signatures_are_rejected() {
 #[test]
 fn keys_of_fewer_than_2048_bits_are_rejected() {
     let small = key(SignatureScheme::RsassaPssSha256, "rsa1024.pub.pem");
-    assert!(matches!(
+    assert_matches!(
         verify_signature(&small, &message(), &[0; 128]),
         Err(CryptoError::InvalidPublicKey(reason)) if reason.contains("2048")
-    ));
-    assert!(matches!(
+    );
+    assert_matches!(
         public_key_from_pem(
             &SignatureScheme::RsassaPssSha256,
             &data::crypto_text("rsa1024.pub.pem")
         ),
         Err(CryptoError::InvalidPublicKey(reason)) if reason.contains("2048")
-    ));
+    );
 }
 
 /// Key sizes are counted in bits: a 2047-bit modulus is as long in bytes as a
@@ -90,19 +92,19 @@ fn keys_of_fewer_than_2048_bits_are_rejected() {
 #[test]
 fn keys_of_2047_bits_are_rejected() {
     let pem = data::crypto_text("rsa2047.pub.pem");
-    assert!(matches!(
+    assert_matches!(
         public_key_from_pem(&SignatureScheme::RsassaPssSha256, &pem),
         Err(CryptoError::InvalidPublicKey(reason)) if reason.contains("got 2047")
-    ));
+    );
     let key = key(SignatureScheme::RsassaPssSha256, "rsa2047.pub.pem");
-    assert!(matches!(
+    assert_matches!(
         verify_signature(&key, &message(), &data::crypto("rsa2047-pss.sig")),
         Err(CryptoError::InvalidPublicKey(reason)) if reason.contains("got 2047")
-    ));
-    assert!(matches!(
+    );
+    assert_matches!(
         PrivateKey::from_pkcs8_pem(&data::crypto_text("rsa2047.key.pem")),
         Err(CryptoError::InvalidPrivateKey(_))
-    ));
+    );
 }
 
 #[test]
@@ -113,17 +115,17 @@ fn keys_of_2048_to_8192_bits_are_accepted() {
     }
     // (The `rustcrypto` backend already refuses to parse this key.)
     let large = key(SignatureScheme::RsassaPssSha256, "rsa8200.pub.pem");
-    assert!(matches!(
+    assert_matches!(
         verify_signature(&large, &message(), &[0; 1025]),
         Err(CryptoError::InvalidPublicKey(_))
-    ));
-    assert!(matches!(
+    );
+    assert_matches!(
         public_key_from_pem(
             &SignatureScheme::RsassaPssSha256,
             &data::crypto_text("rsa8200.pub.pem")
         ),
         Err(CryptoError::InvalidPublicKey(_))
-    ));
+    );
 }
 
 /// PUBLIC is a `SubjectPublicKeyInfo` ("BEGIN PUBLIC KEY"), not a PKCS#1
@@ -135,10 +137,10 @@ fn public_keys_must_be_subject_public_key_info() {
         .keyval
         .public
         .replace("PUBLIC KEY", "RSA PUBLIC KEY");
-    assert!(matches!(
+    assert_matches!(
         verify_signature(&pkcs1_label, &message(), &data::crypto("rsa-pss-saltdigest.sig")),
         Err(CryptoError::InvalidPublicKey(reason)) if reason.contains("label")
-    ));
+    );
 }
 
 /// RSA keys sign with the scheme they are generated for, and PKCS#8 keys

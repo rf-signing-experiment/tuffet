@@ -5,6 +5,8 @@
 //! `SubjectPublicKeyInfo`. Signatures are DER-encoded, as in python-tuf and
 //! go-tuf.
 
+use std::assert_matches;
+
 use rftuf::crypto::{CryptoError, verify_signature};
 use rftuf::metadata::SignatureScheme;
 
@@ -52,11 +54,9 @@ fn signatures_are_der_encoded() {
         verify_signature(&key, &message(), &der).unwrap();
         let fixed = der_to_fixed(&der, scalar_size);
         assert_eq!(fixed.len(), 2 * scalar_size);
-        assert!(
-            matches!(
-                verify_signature(&key, &message(), &fixed),
-                Err(CryptoError::BadSignature)
-            ),
+        assert_matches!(
+            verify_signature(&key, &message(), &fixed),
+            Err(CryptoError::BadSignature),
             "{scheme}"
         );
     }
@@ -67,15 +67,15 @@ fn signatures_are_der_encoded() {
 #[test]
 fn keys_are_only_used_with_the_curve_of_their_scheme() {
     let p256_as_p384 = key(SignatureScheme::EcdsaSha2Nistp384, "p256.pub.pem");
-    assert!(matches!(
+    assert_matches!(
         verify_signature(&p256_as_p384, &message(), &data::crypto("p256.sig")),
         Err(CryptoError::InvalidPublicKey(_))
-    ));
+    );
     let p384_as_p256 = key(SignatureScheme::EcdsaSha2Nistp256, "p384.pub.pem");
-    assert!(matches!(
+    assert_matches!(
         verify_signature(&p384_as_p256, &message(), &data::crypto("p384.sig")),
         Err(CryptoError::InvalidPublicKey(_))
-    ));
+    );
 }
 
 #[test]
@@ -92,11 +92,9 @@ fn public_keys_must_be_pem_encoded() {
     ] {
         let mut key = key(SignatureScheme::EcdsaSha2Nistp256, "p256.pub.pem");
         key.keyval.public = invalid.clone();
-        assert!(
-            matches!(
-                verify_signature(&key, &message(), &signature),
-                Err(CryptoError::InvalidPublicKey(_))
-            ),
+        assert_matches!(
+            verify_signature(&key, &message(), &signature),
+            Err(CryptoError::InvalidPublicKey(_)),
             "{invalid}"
         );
     }

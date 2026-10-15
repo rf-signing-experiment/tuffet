@@ -2,6 +2,8 @@
 //! string is "YYYY-MM-DDTHH:MM:SSZ". Time is always in UTC, and the "Z" time
 //! zone designator is attached to indicate a zero UTC offset."
 
+use std::assert_matches;
+
 use rftuf::Error;
 use rftuf::metadata::{Metadata, Timestamp};
 use serde_json::{Value, json};
@@ -43,13 +45,14 @@ fn other_date_time_formats_are_rejected() {
         "1985-10-21",
         "1985-02-30T01:21:00Z",
     ] {
-        assert!(
-            matches!(timestamp_expiring(json!(other)), Err(Error::Decode(_))),
+        assert_matches!(
+            timestamp_expiring(json!(other)),
+            Err(Error::Decode(_)),
             "{other}"
         );
     }
-    assert!(matches!(
+    assert_matches!(
         timestamp_expiring(json!(499_137_660)),
         Err(Error::Decode(_))
-    ));
+    );
 }

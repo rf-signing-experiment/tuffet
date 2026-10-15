@@ -4,12 +4,14 @@
 //! whether anything changed. It must be signed by the root's timestamp keys,
 //! must not roll back the trusted timestamp, and must not have expired.
 
+use std::assert_matches;
+
 use jiff::SignedDuration;
 use rftuf::metadata::{MetaFile, RoleType};
 use rftuf::trusted::TimestampUpdate;
 use rftuf::{Error, UpdaterConfig};
 
-use crate::support::{TestRepo, assert_err, expired, far_future};
+use crate::support::{TestRepo, expired, far_future};
 
 /// 5.4.1: the timestamp is downloaded in every update, by the fixed name
 /// `timestamp.json`, also with consistent snapshots (6.2.1: it "is the only
@@ -34,9 +36,9 @@ fn timestamp_downloads_are_limited_to_timestamp_max_length() {
 
     let mut config = UpdaterConfig::default();
     config.timestamp_max_length = length - 1;
-    assert_err!(
+    assert_matches!(
         repo.client_with(config.clone()).refresh(),
-        Error::TooLarge { name, max } if name == "timestamp.json" && max == length - 1
+        Err(Error::TooLarge { name, max }) if name == "timestamp.json" && max == length - 1
     );
     config.timestamp_max_length = length;
     repo.client_with(config).refresh().unwrap();
@@ -51,14 +53,14 @@ fn timestamp_must_be_signed_by_a_threshold_of_timestamp_keys() {
     let mut trusted = repo.trusted();
 
     let by_snapshot_key = repo.sign("snapshot", &repo.timestamp);
-    assert_err!(
+    assert_matches!(
         trusted.update_timestamp(&by_snapshot_key),
-        Error::SignatureThreshold { role, valid: 0, threshold: 2 } if role == "timestamp"
+        Err(Error::SignatureThreshold { role, valid: 0, threshold: 2 }) if role == "timestamp"
     );
     let by_one_key = TestRepo::sign_with(&repo.timestamp, &[&keys[0]]);
-    assert_err!(
+    assert_matches!(
         trusted.update_timestamp(&by_one_key),
-        Error::SignatureThreshold { role, valid: 1, threshold: 2 } if role == "timestamp"
+        Err(Error::SignatureThreshold { role, valid: 1, threshold: 2 }) if role == "timestamp"
     );
     let by_both_keys = TestRepo::sign_with(&repo.timestamp, &[&keys[0], &keys[1]]);
     trusted.update_timestamp(&by_both_keys).unwrap();
@@ -77,13 +79,13 @@ fn timestamp_signed_with_a_rotated_out_key_is_rejected() {
 
     let mut trusted = repo.trusted();
     trusted.update_root(&repo.file("2.root.json")).unwrap();
-    assert_err!(
+    assert_matches!(
         trusted.load_cached_timestamp(&signed_with_old_key),
-        Error::SignatureThreshold { role, .. } if role == "timestamp"
+        Err(Error::SignatureThreshold { role, .. }) if role == "timestamp"
     );
-    assert_err!(
+    assert_matches!(
         trusted.update_timestamp(&signed_with_old_key),
-        Error::SignatureThreshold { role, .. } if role == "timestamp"
+        Err(Error::SignatureThreshold { role, .. }) if role == "timestamp"
     );
     trusted
         .update_timestamp(&repo.file("timestamp.json"))
@@ -102,17 +104,17 @@ fn rejects_a_timestamp_rollback() {
 
     let mut trusted = repo.trusted();
     trusted.load_cached_timestamp(&version_2).unwrap();
-    assert_err!(
+    assert_matches!(
         trusted.update_timestamp(&version_1),
-        Error::Rollback { role, trusted: 2, new: 1 } if role == "timestamp"
+        Err(Error::Rollback { role, trusted: 2, new: 1 }) if role == "timestamp"
     );
 
     let mut client = repo.client();
     client.refresh().unwrap();
     repo.write("timestamp.json", version_1);
-    assert_err!(
+    assert_matches!(
         client.refresh(),
-        Error::Rollback { role, trusted: 2, new: 1 } if role == "timestamp"
+        Err(Error::Rollback { role, trusted: 2, new: 1 }) if role == "timestamp"
     );
     assert_eq!(client.stored("timestamp.json"), Some(version_2));
 }
@@ -130,9 +132,9 @@ fn an_expired_trusted_timestamp_still_prevents_rollbacks() {
     trusted
         .load_cached_timestamp(&repo.file("timestamp.json"))
         .unwrap();
-    assert_err!(
+    assert_matches!(
         trusted.update_timestamp(&version_1),
-        Error::Rollback { role, trusted: 2, new: 1 } if role == "timestamp"
+        Err(Error::Rollback { role, trusted: 2, new: 1 }) if role == "timestamp"
     );
 }
 
@@ -176,9 +178,9 @@ fn an_unchanged_timestamp_must_not_have_expired() {
     trusted
         .load_cached_timestamp(&repo.file("timestamp.json"))
         .unwrap();
-    assert_err!(
+    assert_matches!(
         trusted.update_timestamp(&repo.file("timestamp.json")),
-        Error::Expired { role, .. } if role == "timestamp"
+        Err(Error::Expired { role, .. }) if role == "timestamp"
     );
 }
 
@@ -198,9 +200,9 @@ fn timestamp_must_not_roll_back_the_snapshot_version() {
     next.version += 1;
     next.meta
         .insert("snapshot.json".to_owned(), MetaFile::new(1));
-    assert_err!(
+    assert_matches!(
         trusted.update_timestamp(&repo.sign("timestamp", &next)),
-        Error::Rollback { role, trusted: 2, new: 1 } if role == "snapshot"
+        Err(Error::Rollback { role, trusted: 2, new: 1 }) if role == "snapshot"
     );
 
     next.meta
@@ -219,14 +221,14 @@ fn rejects_an_expired_timestamp() {
     repo.publish_timestamp();
 
     let mut trusted = repo.trusted();
-    assert_err!(
+    assert_matches!(
         trusted.update_timestamp(&repo.file("timestamp.json")),
-        Error::Expired { role, .. } if role == "timestamp"
+        Err(Error::Expired { role, .. }) if role == "timestamp"
     );
     assert!(trusted.timestamp().is_none());
 
     let mut client = repo.client();
-    assert_err!(client.refresh(), Error::Expired { role, .. } if role == "timestamp");
+    assert_matches!(client.refresh(), Err(Error::Expired { role, .. }) if role == "timestamp");
     assert_eq!(client.stored("timestamp.json"), None);
 }
 
