@@ -12,7 +12,12 @@ feature-depth = 1
 
 [advisories]
 ignore = [
-  #{ id = "RUSTSEC-0000-0000", reason = "..." },
+  # Marvin attack: timing of the `rsa` crate's private-key operations can leak
+  # the key. No fixed release exists. The TUF client only verifies RSA
+  # signatures, which uses public keys. RSA signing with `PrivateKey` and the
+  # rustcrypto backend is affected where an attacker can time it (an online
+  # signer); the aws-lc-rs backend does not use `rsa`.
+  { id = "RUSTSEC-2023-0071", reason = "only public-key RSA operations in the client; see the comment above" },
 ]
 
 [licenses]
@@ -20,16 +25,10 @@ allow = [
   "MIT",
   "MIT-0",
   "Apache-2.0",
-  "BSD-2-Clause",
   "BSD-3-Clause",
-  "MPL-2.0",
-  "Unicode-DFS-2016",
   "Unicode-3.0",
   "CC0-1.0",
   "ISC",
-  "OpenSSL",
-  "Zlib",
-  "NCSA",
   "CDLA-Permissive-2.0",
 ]
 confidence-threshold = 0.8
