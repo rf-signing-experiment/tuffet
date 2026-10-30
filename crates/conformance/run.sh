@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Runs the tuf-conformance test suite against rftuf's client-under-test.
+# Runs the tuf-conformance test suite against tuffet's client-under-test.
 #
 #   crates/conformance/run.sh [pytest arguments]
 #
@@ -33,11 +33,11 @@ if [[ ! -x $suite/env/bin/pytest ]]; then
     "$suite/env/bin/pip" install --quiet -e "$suite"
 fi
 
-cargo build --manifest-path "$repo/Cargo.toml" -p rftuf-conformance \
+cargo build --manifest-path "$repo/Cargo.toml" -p tuffet-conformance \
     --no-default-features --features "$BACKEND"
 
 # The suite reads expected failures from "<client>.xfails".
-cp "$target_dir/debug/rftuf-conformance" "$work/rftuf-conformance"
-cp "$repo/crates/conformance/rftuf-conformance.xfails" "$work/rftuf-conformance.xfails"
+cp "$target_dir/debug/tuffet-conformance" "$work/tuffet-conformance"
+cp "$repo/crates/conformance/tuffet-conformance.xfails" "$work/tuffet-conformance.xfails"
 
-exec "$suite/env/bin/pytest" "$suite/tuf_conformance" --entrypoint "$work/rftuf-conformance" "$@"
+exec "$suite/env/bin/pytest" "$suite/tuf_conformance" --entrypoint "$work/tuffet-conformance" "$@"

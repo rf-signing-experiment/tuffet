@@ -1,6 +1,6 @@
 //! The client-under-test for the [tuf-conformance] test suite.
 //!
-//! Implements the suite's [CLI protocol] on top of [`rftuf::Updater`]. To run
+//! Implements the suite's [CLI protocol] on top of [`tuffet::Updater`]. To run
 //! the suite, see `crates/conformance/run.sh`.
 //!
 //! [tuf-conformance]: https://github.com/theupdateframework/tuf-conformance
@@ -16,10 +16,10 @@ use std::time::Duration;
 
 use clap::{Parser, Subcommand};
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
-use rftuf::Updater;
-use rftuf::store::{FilesystemStore, MetadataStore};
-use rftuf_http::{HttpTransport, Url, reqwest};
 use tracing_subscriber::EnvFilter;
+use tuffet::Updater;
+use tuffet::store::{FilesystemStore, MetadataStore};
+use tuffet_http::{HttpTransport, Url, reqwest};
 
 type Result<T, E = Box<dyn Error>> = std::result::Result<T, E>;
 
@@ -61,7 +61,7 @@ enum Command {
 
 fn main() -> ExitCode {
     let filter =
-        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,rftuf=debug"));
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,tuffet=debug"));
     tracing_subscriber::fmt()
         .with_env_filter(filter)
         .with_writer(io::stderr)
@@ -77,7 +77,7 @@ fn main() -> ExitCode {
                 message.push_str(&format!(": {cause}"));
                 source = cause.source();
             }
-            eprintln!("rftuf-conformance: {message}");
+            eprintln!("tuffet-conformance: {message}");
             ExitCode::FAILURE
         }
     }

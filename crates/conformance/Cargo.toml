@@ -1,5 +1,5 @@
 [package]
-name = "rftuf-conformance"
+name = "tuffet-conformance"
 version = "0.0.0"
 description = "Client-under-test for the tuf-conformance test suite"
 edition.workspace = true
@@ -11,15 +11,15 @@ workspace = true
 
 [features]
 default = ["rustcrypto"]
-# Cryptography backend of rftuf.
-rustcrypto = ["rftuf/rustcrypto", "rftuf-http/rustcrypto"]
-aws-lc-rs = ["rftuf/aws-lc-rs", "rftuf-http/aws-lc-rs"]
+# Cryptography backend of tuffet.
+rustcrypto = ["tuffet/rustcrypto", "tuffet-http/rustcrypto"]
+aws-lc-rs = ["tuffet/aws-lc-rs", "tuffet-http/aws-lc-rs"]
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
 percent-encoding = "2"
-rftuf.workspace = true
-rftuf-http.workspace = true
+tuffet.workspace = true
+tuffet-http.workspace = true
 tokio = { version = "1", features = ["macros", "rt"] }
 tracing.workspace = true
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

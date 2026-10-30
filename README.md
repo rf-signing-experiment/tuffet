@@ -1,4 +1,4 @@
-# rftuf
+# tuffet
 
 A Rust client library for [The Update Framework (TUF)](https://theupdateframework.io/),
 implementing the client workflow of the specification in [`tuf-spec.md`](tuf-spec.md)
@@ -9,9 +9,9 @@ This library is interoperable with other TUF implementations, including: `go-tuf
 
 | Crate | Purpose |
 | --- | --- |
-| [`rftuf`](crates/rftuf/src/) | The library. No HTTP client; filesystem and in-memory I/O are built in. |
-| [`rftuf-http`](crates/rftuf-http/) | An HTTP(S) `Transport` built on reqwest. |
-| [`rftuf-conformance`](crates/conformance/) | The client-under-test for the [tuf-conformance] test suite (not published). |
+| [`tuffet`](crates/tuffet/src/) | The library. No HTTP client; filesystem and in-memory I/O are built in. |
+| [`tuffet-http`](crates/tuffet-http/) | An HTTP(S) `Transport` built on reqwest. |
+| [`tuffet-conformance`](crates/conformance/) | The client-under-test for the [tuf-conformance] test suite (not published). |
 
 ## API Layers
 
@@ -41,7 +41,7 @@ I/O. Use these to drive the workflow with your own networking and storage.
 **`metadata`**: the role payloads (`Root`, `Timestamp`, `Snapshot`, `Targets`),
 the signed envelope `Metadata<T>`, and signing and verification of single
 files. It is also the API for creating metadata (see
-[`tests/support/repo.rs`](crates/rftuf/tests/support/repo.rs) for a small repository built with it).
+[`tests/support/repo.rs`](crates/tuffet/tests/support/repo.rs) for a small repository built with it).
 
 ## Design notes
 
@@ -49,7 +49,7 @@ files. It is also the API for creating metadata (see
   the application, is the trust anchor.
 - **POUF.** The wire format is a `pouf::Pouf` type parameter that defaults to
   `pouf::Json`. Implementing custom POUFs is possible with the `Pouf` trait.
-- **Cryptography** lives entirely in [`src/crypto`](crates/rftuf/src/crypto/). The
+- **Cryptography** lives entirely in [`src/crypto`](crates/tuffet/src/crypto/). The
   backend-neutral part holds the TUF rules (schemes, key encodings, RSA key
   sizes, the message ML-DSA signs).
   
@@ -69,10 +69,10 @@ files. It is also the API for creating metadata (see
 
 | Crate | Feature | Effect |
 | --- | --- | --- |
-| `rftuf` | `rustcrypto` (default) | Cryptography from the RustCrypto crates ([`rustcrypto.rs`](crates/rftuf/src/crypto/rustcrypto.rs)). |
-| `rftuf` | `aws-lc-rs` | Cryptography from AWS-LC ([`aws_lc.rs`](crates/rftuf/src/crypto/aws_lc.rs)). Takes precedence over `rustcrypto`; disable default features to leave RustCrypto out. Enable `aws-lc-rs/fips` in your own manifest for FIPS mode. |
-| `rftuf-http` | `rustls` (default), `native-tls` | TLS implementation of the default HTTP client. |
-| `rftuf-http` | `rustcrypto` (default), `aws-lc-rs` | Passed through to `rftuf`. With `rustls`, `aws-lc-rs` means a single crypto library. |
+| `tuffet` | `rustcrypto` (default) | Cryptography from the RustCrypto crates ([`rustcrypto.rs`](crates/tuffet/src/crypto/rustcrypto.rs)). |
+| `tuffet` | `aws-lc-rs` | Cryptography from AWS-LC ([`aws_lc.rs`](crates/tuffet/src/crypto/aws_lc.rs)). Takes precedence over `rustcrypto`; disable default features to leave RustCrypto out. Enable `aws-lc-rs/fips` in your own manifest for FIPS mode. |
+| `tuffet-http` | `rustls` (default), `native-tls` | TLS implementation of the default HTTP client. |
+| `tuffet-http` | `rustcrypto` (default), `aws-lc-rs` | Passed through to `tuffet`. With `rustls`, `aws-lc-rs` means a single crypto library. |
 
 The backends behave the same, with two exceptions:
 
@@ -87,19 +87,19 @@ The backends behave the same, with two exceptions:
 ## Testing
 
 ```sh
-cargo test --workspace                                    # rustcrypto backend
-cargo test -p rftuf --no-default-features -F aws-lc-rs    # aws-lc-rs backend
+cargo test --workspace                                     # rustcrypto backend
+cargo test -p tuffet --no-default-features -F aws-lc-rs    # aws-lc-rs backend
 ```
 
 ### TUF Conformance Testing
 
 The [tuf-conformance] suite tests the client against the specification and
-other implementations' behavior. rftuf passes all its tests; tests expected to
+other implementations' behavior. tuffet passes all its tests; tests expected to
 fail would be listed in
-[`crates/conformance/rftuf-conformance.xfails`](crates/conformance/rftuf-conformance.xfails).
+[`crates/conformance/tuffet-conformance.xfails`](crates/conformance/tuffet-conformance.xfails).
 To run it locally (needs git, Python 3.10+ and `faketime`):
 
 ```sh
-conformance/run.sh
-BACKEND=aws-lc-rs conformance/run.sh
+crates/conformance/run.sh
+BACKEND=aws-lc-rs crates/conformance/run.sh
 ```

@@ -100,10 +100,10 @@ jobs:
       - name: Run the download example
         # Against python-tuf's test repository, whose metadata expires on 2030-01-01.
         run: |
-          repo=crates/rftuf/tests/data/python-tuf
+          repo=crates/tuffet/tests/data/python-tuf
           python3 -m http.server --bind 127.0.0.1 --directory "$repo" 8000 &
           curl --silent --fail --retry 10 --retry-connrefused --output /dev/null http://127.0.0.1:8000/metadata/root.json
-          cargo run --locked -p rftuf-http --example download -- \
+          cargo run --locked -p tuffet-http --example download -- \
             http://127.0.0.1:8000/metadata/ http://127.0.0.1:8000/targets/ "$repo/metadata/root.json" \
             "$RUNNER_TEMP/metadata" file3.txt "$RUNNER_TEMP/file3.txt"
           cmp "$repo/targets/file3.txt" "$RUNNER_TEMP/file3.txt"
@@ -145,7 +145,7 @@ jobs:
       - name: Install Rust
         run: rustup toolchain install stable --profile minimal --no-self-update && rustup default stable
       # Builds each published crate from its packaged archive.
-      - run: cargo package --workspace --exclude rftuf-conformance --locked
+      - run: cargo package --workspace --exclude tuffet-conformance --locked
 
   conformance:
     runs-on: ubuntu-latest

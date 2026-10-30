@@ -1,9 +1,9 @@
 [workspace]
-members = ["crates/rftuf", "crates/rftuf-http", "crates/conformance"]
+members = ["crates/tuffet", "crates/tuffet-http", "crates/conformance"]
 resolver = "3"
 
 [workspace.package]
-repository = "https://github.com/rf-signing-experiment/rftuf"
+repository = "https://github.com/rf-signing-experiment/tuffet"
 license = "MIT OR Apache-2.0"
 edition = "2024"
 rust-version = "1.96"
@@ -12,8 +12,8 @@ rust-version = "1.96"
 unsafe_code = "forbid"
 
 [workspace.dependencies]
-rftuf = { version = "0.1", path = "crates/rftuf", default-features = false }
-rftuf-http = { version = "0.1", path = "crates/rftuf-http", default-features = false }
+tuffet = { version = "0.1", path = "crates/tuffet", default-features = false }
+tuffet-http = { version = "0.1", path = "crates/tuffet-http", default-features = false }
 bytes = "1"
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 futures-executor = "0.3"

@@ -1,2 +1,0 @@
-# Tests rftuf is expected to fail (see the tuf-conformance README). The suite
-# still runs them, and fails if one of them passes: remove entries once fixed.

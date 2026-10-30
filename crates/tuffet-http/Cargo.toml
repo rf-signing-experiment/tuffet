@@ -1,0 +1,35 @@
+[package]
+name = "tuffet-http"
+version = "0.1.0"
+description = "An HTTP transport for the tuffet TUF client, built on reqwest"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+default = ["rustls", "rustcrypto"]
+# TLS implementation used by the default client.
+rustls = ["reqwest/rustls"]
+native-tls = ["reqwest/native-tls"]
+# Cryptography backend of tuffet.
+rustcrypto = ["tuffet/rustcrypto"]
+aws-lc-rs = ["tuffet/aws-lc-rs"]
+
+[dependencies]
+futures-util.workspace = true
+reqwest = { version = "0.13", default-features = false, features = ["http2", "system-proxy"] }
+tuffet.workspace = true
+tracing.workspace = true
+url = "2"
+
+[dev-dependencies]
+bytes.workspace = true
+http-body-util = "0.1"
+hyper = { version = "1", features = ["http1", "server"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+tempfile.workspace = true
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread"] }

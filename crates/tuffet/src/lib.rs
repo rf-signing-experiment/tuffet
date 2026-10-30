@@ -1,0 +1,82 @@
+//! A client library for [The Update Framework (TUF)](https://theupdateframework.io/),
+//! following version 1.0 of the [specification](https://theupdateframework.github.io/specification/latest/).
+//!
+//! TUF secures software update systems: it lets a client verify that the
+//! files it downloads from a repository are the ones the repository's
+//! (offline, threshold-protected) keys vouch for, and that it is not being
+//! shown stale, mixed-up or rolled-back metadata.
+//!
+//! # Layers
+//!
+//! - [`Updater`] runs the complete client workflow: it fetches metadata
+//!   through a [`Transport`](transport::Transport), verifies and persists it
+//!   in a [`MetadataStore`](store::MetadataStore), looks up targets through
+//!   delegations, and downloads and verifies target files.
+//! - [`TrustedMetadata`] implements the workflow's verification rules with
+//!   no I/O at all, for callers that want to fetch and store files
+//!   themselves. [`TargetSearch`](trusted::TargetSearch) does the same for
+//!   delegation lookups.
+//! - [`metadata`] holds the metadata types, and signs and verifies
+//!   individual metadata files. It is also the API for creating metadata.
+//!
+//! Supporting modules: [`pouf`] defines the metadata wire format (JSON with
+//! canonical-JSON signatures by default), [`crypto`] contains every
+//! cryptographic operation behind a backend-neutral API, and [`transport`]
+//! and [`store`] define the I/O traits with filesystem and in-memory
+//! implementations. There is no built-in HTTP client; see the `tuffet-http`
+//! crate, or implement [`Transport`](transport::Transport) yourself.
+//!
+//! # Example
+//!
+//! ```no_run
+//! use tuffet::store::FilesystemStore;
+//! use tuffet::transport::FilesystemTransport;
+//! use tuffet::Updater;
+//!
+//! # async fn example() -> tuffet::Result<()> {
+//! let transport = FilesystemTransport::new("/mnt/repo/metadata", "/mnt/repo/targets");
+//! let store = FilesystemStore::new("/var/lib/app/tuf")?;
+//! let mut updater = Updater::builder(transport, store)
+//!     .initial_root(std::fs::read("/usr/share/app/root.json")?)
+//!     .build()?;
+//!
+//! updater.refresh().await?;
+//! match updater.get_target_info("app-1.2.tar.gz").await? {
+//!     Some(target) => {
+//!         let data = updater.download_target(&target).await?;
+//!         println!("downloaded {} verified bytes", data.len());
+//!     }
+//!     None => println!("no such target"),
+//! }
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! # Scope
+//!
+//! Multi-repository consensus (TAP 4) and the optional mirrors role are not
+//! supported; mirrors metadata in root is preserved but ignored.
+//!
+//! # Key IDs
+//!
+//! This client follows TAP 12 - allowing the repository to define the Key ID
+//! rather than requiring it to be a SHA256 hash of the canonical key metadata.
+
+#![forbid(unsafe_code)]
+
+pub mod client;
+pub mod crypto;
+mod error;
+pub mod metadata;
+mod paths;
+pub mod pouf;
+pub mod store;
+pub mod transport;
+pub mod trusted;
+
+pub use client::{Updater, UpdaterConfig};
+pub use error::{Error, Result};
+pub use trusted::{TargetInfo, TrustedMetadata};
+
+/// This crate uses [`jiff::Timestamp`] for timestamps.
+pub use jiff;
