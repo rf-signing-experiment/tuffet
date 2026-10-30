@@ -17,15 +17,33 @@ concurrency:
 env:
   CARGO_INCREMENTAL: 0
   CARGO_TERM_COLOR: always
-  # Warnings fail the build, including those of clippy and rustdoc.
-  RUSTFLAGS: -D warnings
-  RUSTDOCFLAGS: -D warnings
+  # Warnings fail the build, including those of clippy and rustdoc. Unlike
+  # RUSTFLAGS, this does not change what is built, so it doesn't invalidate
+  # caches. Cargo 1.96 (the MSRV job) ignores it.
+  CARGO_BUILD_WARNINGS: deny
+  # A new Rust release can bring new warnings and lints, so CI uses a fixed
+  # version. Renovate updates it (see .github/renovate.json5).
+  RUST_TOOLCHAIN_STABLE: "1.99"  # STABLE
 
 defaults:
   run:
     shell: bash
 
 jobs:
+  # The single check for branch protection to require: it fails unless every
+  # other job succeeded.
+  ci:
+    name: CI
+    needs: [rustfmt, clippy, test, examples, docs, msrv, package, conformance]
+    runs-on: ubuntu-latest
+    if: always()
+    permissions:
+      contents: none
+    steps:
+      - name: Failed
+        run: exit 1
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped')
+
   rustfmt:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -34,7 +52,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Install Rust
-        run: rustup toolchain install stable --profile minimal --component rustfmt --no-self-update && rustup default stable
+        run: rustup toolchain install "$RUST_TOOLCHAIN_STABLE" --profile minimal --component rustfmt --no-self-update && rustup default "$RUST_TOOLCHAIN_STABLE"
       - run: cargo fmt --all --check
 
   clippy:
@@ -45,7 +63,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Install Rust
-        run: rustup toolchain install stable --profile minimal --component clippy --no-self-update && rustup default stable
+        run: rustup toolchain install "$RUST_TOOLCHAIN_STABLE" --profile minimal --component clippy --no-self-update && rustup default "$RUST_TOOLCHAIN_STABLE"
       - name: Clippy (rustcrypto)
         run: cargo clippy --workspace --all-targets --locked
       - name: Clippy (aws-lc-rs)
@@ -72,7 +90,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Install Rust
-        run: rustup toolchain install stable --profile minimal --no-self-update && rustup default stable
+        run: rustup toolchain install "$RUST_TOOLCHAIN_STABLE" --profile minimal --no-self-update && rustup default "$RUST_TOOLCHAIN_STABLE"
       - name: Build (rustcrypto)
         run: cargo build --workspace --all-targets --locked --profile ${{ matrix.profile }}
       - name: Test (rustcrypto)
@@ -94,7 +112,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Install Rust
-        run: rustup toolchain install stable --profile minimal --no-self-update && rustup default stable
+        run: rustup toolchain install "$RUST_TOOLCHAIN_STABLE" --profile minimal --no-self-update && rustup default "$RUST_TOOLCHAIN_STABLE"
       - name: Build the examples
         run: cargo build --workspace --examples --locked
       - name: Run the download example
@@ -116,8 +134,9 @@ jobs:
         with:
           persist-credentials: false
       - name: Install Rust
-        run: rustup toolchain install stable --profile minimal --no-self-update && rustup default stable
-      - run: cargo doc --workspace --no-deps --all-features --locked
+        run: rustup toolchain install "$RUST_TOOLCHAIN_STABLE" --profile minimal --no-self-update && rustup default "$RUST_TOOLCHAIN_STABLE"
+      # Private items too, to catch broken links in internal docs.
+      - run: cargo doc --workspace --no-deps --all-features --document-private-items --locked
 
   msrv:
     runs-on: ubuntu-latest
@@ -143,7 +162,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Install Rust
-        run: rustup toolchain install stable --profile minimal --no-self-update && rustup default stable
+        run: rustup toolchain install "$RUST_TOOLCHAIN_STABLE" --profile minimal --no-self-update && rustup default "$RUST_TOOLCHAIN_STABLE"
       # Builds each published crate from its packaged archive.
       - run: cargo package --workspace --exclude tuffet-conformance --locked
 
@@ -155,7 +174,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Install Rust
-        run: rustup toolchain install stable --profile minimal --no-self-update && rustup default stable
+        run: rustup toolchain install "$RUST_TOOLCHAIN_STABLE" --profile minimal --no-self-update && rustup default "$RUST_TOOLCHAIN_STABLE"
       - name: Install faketime
         run: sudo apt-get update && sudo apt-get install --yes faketime
       - name: tuf-conformance (rustcrypto)

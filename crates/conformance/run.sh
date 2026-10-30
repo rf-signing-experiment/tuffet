@@ -36,8 +36,17 @@ fi
 cargo build --manifest-path "$repo/Cargo.toml" -p tuffet-conformance \
     --no-default-features --features "$BACKEND"
 
-# The suite reads expected failures from "<client>.xfails".
 cp "$target_dir/debug/tuffet-conformance" "$work/tuffet-conformance"
-cp "$repo/crates/conformance/tuffet-conformance.xfails" "$work/tuffet-conformance.xfails"
+
+# The suite reads expected failures from "<client>.xfails", next to the
+# client, and treats a missing file as none. To expect a test to fail, list
+# its name in crates/conformance/tuffet-conformance.xfails (one per line);
+# the suite then fails if that test passes.
+xfails=$repo/crates/conformance/tuffet-conformance.xfails
+if [[ -f $xfails ]]; then
+    cp "$xfails" "$work/tuffet-conformance.xfails"
+else
+    rm -f "$work/tuffet-conformance.xfails"
+fi
 
 exec "$suite/env/bin/pytest" "$suite/tuf_conformance" --entrypoint "$work/tuffet-conformance" "$@"

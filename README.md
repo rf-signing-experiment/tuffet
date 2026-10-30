@@ -93,13 +93,27 @@ cargo test -p tuffet --no-default-features -F aws-lc-rs    # aws-lc-rs backend
 
 ### TUF Conformance Testing
 
-The [tuf-conformance] suite tests the client against the specification and
-other implementations' behavior. tuffet passes all its tests; tests expected to
-fail would be listed in
-[`crates/conformance/tuffet-conformance.xfails`](crates/conformance/tuffet-conformance.xfails).
+The tuf-conformance suite tests the client against the specification and
+other implementations' behavior. tuffet passes all its tests.
 To run it locally (needs git, Python 3.10+ and `faketime`):
 
 ```sh
 crates/conformance/run.sh
 BACKEND=aws-lc-rs crates/conformance/run.sh
 ```
+
+## License
+
+Licensed under either of
+
+* Apache License, Version 2.0, ([LICENSE-APACHE](LICENSE-APACHE) or <https://www.apache.org/licenses/LICENSE-2.0>)
+* MIT license ([LICENSE-MIT](LICENSE-MIT) or <https://opensource.org/license/mit>)
+
+at your option.
+
+### Contribution
+
+Unless you explicitly state otherwise, any contribution intentionally
+submitted for inclusion in the work by you, as defined in the Apache-2.0
+license, shall be dual-licensed as above, without any additional terms or
+conditions.

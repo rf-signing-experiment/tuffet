@@ -19,4 +19,29 @@
   python-tuf is dual-licensed under the MIT and Apache 2.0 licenses,
   Copyright (c) 2010 New York University.
 
+## Regenerating the signatures
+
+The signatures in `crypto/` are of `message.txt`, which has no trailing
+newline. After changing it or a key, regenerate them all by running this in
+`crypto/` (ML-DSA needs OpenSSL 3.5 or later):
+
+```sh
+m=message.txt
+openssl pkeyutl -sign -rawin -inkey ed25519.key.pem -in $m -out ed25519.sig
+openssl dgst -sha256 -sign p256.key.pem -out p256.sig $m
+openssl dgst -sha384 -sign p384.key.pem -out p384.sig $m
+# RSA-PSS; MGF1 uses the same hash as the digest (OpenSSL's default).
+pss() { openssl dgst -$1 -sign $2.key.pem -sigopt rsa_padding_mode:pss -sigopt rsa_pss_saltlen:$3 -out $4 $m; }
+pss sha256 rsa     digest rsa-pss-saltdigest.sig
+pss sha256 rsa     max    rsa-pss-saltmax.sig
+pss sha384 rsa     digest rsa-pss-sha384.sig
+pss sha512 rsa     digest rsa-pss-sha512.sig
+pss sha256 rsa2047 digest rsa2047-pss.sig
+# Pure ML-DSA with an empty context, of the TAP 21 message: the bytes
+# "tuf\x01" followed by the SHA-512 digest of the payload.
+{ printf 'tuf\x01'; openssl dgst -sha512 -binary $m; } > tap21.bin
+for n in 44 65 87; do openssl pkeyutl -sign -rawin -inkey ml-dsa-$n.key.pem -in tap21.bin -out ml-dsa-$n.sig; done
+rm tap21.bin
+```
+
 [TAP 21]: https://github.com/theupdateframework/taps/blob/master/tap21.md

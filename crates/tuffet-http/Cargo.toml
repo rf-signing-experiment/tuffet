@@ -6,6 +6,16 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+include.workspace = true
+
+[package.metadata.release]
+pre-release-replacements = [
+  {file="CHANGELOG.md", search="Unreleased", replace="{{version}}", min=1},
+  {file="CHANGELOG.md", search="\\.\\.\\.HEAD", replace="...{{tag_name}}", exactly=1},
+  {file="CHANGELOG.md", search="ReleaseDate", replace="{{date}}", min=1},
+  {file="CHANGELOG.md", search="<!-- next-header -->", replace="<!-- next-header -->\n## [Unreleased] - ReleaseDate\n", exactly=1},
+  {file="CHANGELOG.md", search="<!-- next-url -->", replace="<!-- next-url -->\n[Unreleased]: {{repository}}/compare/{{tag_name}}...HEAD", exactly=1},
+]
 
 [lints]
 workspace = true
@@ -21,15 +31,15 @@ aws-lc-rs = ["tuffet/aws-lc-rs"]
 
 [dependencies]
 futures-util.workspace = true
-reqwest = { version = "0.13", default-features = false, features = ["http2", "system-proxy"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["http2", "system-proxy"] }
 tuffet.workspace = true
 tracing.workspace = true
-url = "2"
+url = "2.5.8"
 
 [dev-dependencies]
 bytes.workspace = true
-http-body-util = "0.1"
-hyper = { version = "1", features = ["http1", "server"] }
-hyper-util = { version = "0.1", features = ["tokio"] }
+http-body-util = "0.1.5"
+hyper = { version = "1.12.0", features = ["http1", "server"] }
+hyper-util = { version = "0.1.21", features = ["tokio"] }
 tempfile.workspace = true
-tokio = { version = "1", features = ["macros", "net", "rt-multi-thread"] }
+tokio = { version = "1.53.2", features = ["macros", "net", "rt-multi-thread"] }

@@ -1,0 +1,134 @@
+// Based on https://github.com/epage/_rust
+{
+  extends: ["helpers:pinGitHubActionDigests"],
+  schedule: [
+    'before 5am on the first day of the month',
+  ],
+  minimumReleaseAge: "3 days",
+  internalChecksFilter: "strict",
+  commitMessageLowerCase: 'never',
+  configMigration: true,
+  dependencyDashboard: true,
+  // Once a month, update every crate in Cargo.lock to its latest compatible
+  // version (`cargo update`) in one PR. Manifest requirements are left alone
+  // (see packageRules), so this is how patched releases of dependencies,
+  // direct and transitive, reach the lockfile. Not auto-merged, so a person
+  // reviews what changed in the dependency tree of a security library.
+  lockFileMaintenance: {
+    enabled: true,
+    schedule: [
+      'before 5am on the first day of the month',
+    ],
+  },
+  customManagers: [
+    // The Rust version CI pins: a line with `STABLE` and a version number,
+    // such as `RUST_TOOLCHAIN_STABLE: "1.99"  # STABLE` in ci.yml.
+    {
+      customType: 'regex',
+      managerFilePatterns: [
+        '/^\\.github/workflows/ci.yml$/',
+      ],
+      matchStrings: [
+        'STABLE.*?(?<currentValue>\\d+\\.\\d+(\\.\\d+)?)',
+        '(?<currentValue>\\d+\\.\\d+(\\.\\d+)?).*?STABLE',
+      ],
+      depNameTemplate: 'STABLE',
+      packageNameTemplate: 'rust-lang/rust',
+      datasourceTemplate: 'github-releases',
+    },
+  ],
+  packageRules: [
+    {
+      commitMessageTopic: 'Rust Stable',
+      matchManagers: [
+        'custom.regex',
+      ],
+      matchDepNames: [
+        'STABLE',
+      ],
+      extractVersion: '^(?<version>\\d+\\.\\d+)',  // Drop the patch version
+      schedule: [
+        '* * * * *',
+      ],
+      automerge: true,
+    },
+    {
+      matchManagers: [
+        'github-actions',
+      ],
+      matchUpdateTypes: [
+        'minor',
+        'patch',
+      ],
+      automerge: true,
+      groupName: 'compatible (actions)',
+    },
+    // Goals:
+    // - Don't raise version requirements of the published crates for
+    //   compatible releases: that would force the update on users.
+    // - Take advantage of latest dev-dependencies
+    // - Rollup safe upgrades to reduce CI runner load
+    // - Help keep number of versions down by always using latest breaking change
+    // - Have lockfile and manifest in-sync
+    {
+      matchManagers: [
+        'cargo',
+      ],
+      matchDepTypes: [
+        'build-dependencies',
+        'dependencies',
+        'workspace.dependencies',
+      ],
+      matchCurrentVersion: '>=0.1.0',
+      matchUpdateTypes: [
+        'patch',
+      ],
+      enabled: false,
+    },
+    {
+      matchManagers: [
+        'cargo',
+      ],
+      matchDepTypes: [
+        'build-dependencies',
+        'dependencies',
+        'workspace.dependencies',
+      ],
+      matchCurrentVersion: '>=1.0.0',
+      matchUpdateTypes: [
+        'minor',
+        'patch',
+      ],
+      enabled: false,
+    },
+    {
+      matchManagers: [
+        'cargo',
+      ],
+      matchDepTypes: [
+        'dev-dependencies',
+      ],
+      matchCurrentVersion: '>=0.1.0',
+      matchUpdateTypes: [
+        'patch',
+      ],
+      automerge: true,
+      groupName: 'compatible (dev)',
+    },
+    {
+      matchManagers: [
+        'cargo',
+      ],
+      matchDepTypes: [
+        'dev-dependencies',
+      ],
+      matchCurrentVersion: '>=1.0.0',
+      matchUpdateTypes: [
+        'minor',
+        'patch',
+      ],
+      automerge: true,
+      groupName: 'compatible (dev)',
+    },
+  ],
+}
