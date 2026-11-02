@@ -36,7 +36,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     let Some(info) = updater.get_target_info(target).await? else {
-        return Err(format!("{target} is not a trusted target").into());
+        return Err(format!("{target} does not exist").into());
     };
     updater.download_target_to(&info, output.as_ref()).await?;
     println!(
