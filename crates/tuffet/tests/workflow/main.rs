@@ -60,5 +60,4 @@ fn the_default_limits_are_those_of_the_reference_implementation() {
     assert_eq!(config.snapshot_max_length, 2_000_000); // Y, for snapshot metadata
     assert_eq!(config.targets_max_length, 5_000_000); // Z
     assert_eq!(config.max_delegations, 32);
-    assert!(config.prefix_targets_with_hash);
 }

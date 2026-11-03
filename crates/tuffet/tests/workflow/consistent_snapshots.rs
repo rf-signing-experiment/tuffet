@@ -7,8 +7,8 @@
 //! Root is always downloaded by version (5.3.3) and timestamp never
 //! (5.4.1).
 
+use tuffet::TargetInfo;
 use tuffet::crypto::HashAlgorithm;
-use tuffet::{TargetInfo, UpdaterConfig};
 
 use crate::support::{Delegation, TestRepo};
 
@@ -82,26 +82,6 @@ fn targets_are_downloaded_with_a_hash_their_metadata_lists() {
     assert_eq!(client.download(&target).unwrap(), b"data");
     let sha512 = listed.hashes.get("sha512").unwrap();
     assert_eq!(repo.requests(), [format!("target:{sha512}.file")]);
-}
-
-/// `UpdaterConfig::prefix_targets_with_hash`: some repositories with
-/// consistent snapshots store target files under their plain names, which
-/// clients can be configured to download.
-#[test]
-fn targets_can_be_downloaded_without_hash_prefixes() {
-    let mut repo = TestRepo::builder().consistent_snapshots().build();
-    repo.add_target("targets", "file.txt", b"content");
-    repo.commit();
-    repo.serve_target("file.txt", b"content");
-    let mut config = UpdaterConfig::default();
-    config.prefix_targets_with_hash = false;
-    let mut client = repo.client_with(config);
-    client.refresh().unwrap();
-    let target = client.get_target_info("file.txt").unwrap().unwrap();
-    repo.requests();
-
-    assert_eq!(client.download(&target).unwrap(), b"content");
-    assert_eq!(repo.requests(), ["target:file.txt"]);
 }
 
 /// 5.5.7, 5.6.6: metadata downloaded as `VERSION.FILENAME.EXT` is persisted

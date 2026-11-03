@@ -51,10 +51,22 @@ files. It is also the API for creating metadata (see
   `pouf::Json`. Implementing custom POUFs is possible with the `Pouf` trait.
 - **Cryptography** lives entirely in [`src/crypto`](crates/tuffet/src/crypto/). The
   backend-neutral part holds the TUF rules (schemes, key encodings, RSA key
-  sizes, the message ML-DSA signs).
-  
-  RSA, ECDSA, ED25519, and ML-DSA are supported. AWS-LC and RustCrypto backends
-  are both supported, controlled by [features](#features).
+  sizes, the message ML-DSA signs). Supported signature schemes, as `keytype`
+  and `scheme` in metadata:
+
+  - Ed25519: `ed25519` with `ed25519`. Public keys are hex.
+  - ECDSA: `ecdsa` with `ecdsa-sha2-nistp256`, or `ecdsa-sha2-nistp384`.
+    Signatures are DER.
+  - RSA: `rsa` with `rsassa-pss-sha256`, or `rsassa-pss-sha384` or
+    `rsassa-pss-sha512`. Keys must be 2048 to 8192 bits. The `aws-lc-rs`
+    backend only verifies signatures whose salt is as long as the digest.
+  - ML-DSA ([TAP 21](https://github.com/theupdateframework/taps/blob/master/tap21.md)):
+    `ml-dsa` with `ml-dsa-44/1`, `ml-dsa-65/1` or `ml-dsa-87/1`. The
+    `rustcrypto` backend only loads private keys that include the seed.
+
+  Public keys other than Ed25519 ones are PEM-encoded `SubjectPublicKeyInfo`.
+  The supported file hashes are `sha256` and `sha512`. AWS-LC and RustCrypto
+  backends are both supported, controlled by [features](#features).
 - **I/O** is defined by two traits: `transport::Transport` (async; returns
   streams so the library can enforce size limits while downloading) and
   `store::MetadataStore`. The library is runtime-agnostic.

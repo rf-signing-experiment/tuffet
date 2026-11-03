@@ -10,9 +10,8 @@ use super::{ByteStream, Transport, TransportError};
 
 /// Serves a repository held in memory.
 ///
-/// Files can be added and removed at any time through a shared reference,
-/// which makes it convenient for tests and for repositories that are
-/// obtained by other means. Share it with an updater through `Arc` or `&`.
+/// Files can be added and removed at any time through a shared reference.
+/// Share it with an updater through `Arc` or `&` to change the repository.
 #[derive(Debug, Default)]
 pub struct MemoryTransport {
     metadata: RwLock<HashMap<String, Bytes>>,

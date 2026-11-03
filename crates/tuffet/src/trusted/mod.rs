@@ -104,23 +104,25 @@ impl<P: Pouf> TrustedMetadata<P> {
         self.targets_role(RoleType::Targets.as_str())
     }
 
-    /// The metadata of the top-level targets role or of a delegated role.
+    /// The metadata for a role.
     ///
     /// A role can be delegated to by several roles, with different keys. The
     /// metadata returned here was verified for the delegation it was loaded
-    /// through, which may not be the one at hand: to use it through a
-    /// particular delegation, get it with
+    /// through. To use it through a particular delegation, use
     /// [`delegated_targets`](Self::delegated_targets) instead.
     pub fn targets_role(&self, role: &str) -> Option<&Metadata<Targets, P>> {
         self.targets.get(role)
     }
 
-    /// The trusted targets metadata of `role`, if it is loaded, checked
-    /// against the keys that `delegator` delegates `role` to.
+    /// The trusted targets metadata of `role`, if it is loaded, verified for
+    /// `delegator`'s delegation to it.
     ///
-    /// Fails if the metadata was loaded through a different delegation whose
-    /// keys signed it, but `delegator`'s keys did not: otherwise one
-    /// delegation could lend its trust to another.
+    /// A role can be delegated to by several roles, each with its own keys,
+    /// but its metadata is loaded only once, through the first delegation the
+    /// search follows. This checks it again against the keys `delegator`
+    /// names, and fails if they did not sign it. Otherwise keys trusted by one
+    /// delegator could speak for another: metadata signed only for role `a`'s
+    /// delegation would also be accepted through role `b`'s.
     pub fn delegated_targets(
         &self,
         role: &str,

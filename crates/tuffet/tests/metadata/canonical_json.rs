@@ -67,6 +67,17 @@ fn numbers_must_be_integers() {
     assert_matches!(decode::<Timestamp>(payload), Err(Error::Decode(_)));
 }
 
+/// Nor can such metadata be created: its payload has no canonical form to
+/// sign.
+#[test]
+fn metadata_with_a_number_that_is_not_an_integer_cannot_be_created() {
+    let mut timestamp = TestRepo::new().timestamp;
+    timestamp
+        .unrecognized_fields
+        .insert("x-ratio".to_owned(), json!(0.5));
+    assert_matches!(Metadata::<Timestamp>::new(timestamp), Err(Error::Encode(_)));
+}
+
 /// Signatures cover the canonical form of the payload exactly as received,
 /// which is what `Metadata::canonical_signed` holds.
 #[test]

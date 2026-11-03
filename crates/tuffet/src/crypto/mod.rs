@@ -4,47 +4,14 @@
 //! other modules use the backend-neutral API defined here. This module also
 //! owns the TUF-specific rules: which schemes exist, how `keyval.public`
 //! strings encode keys (hex for Ed25519, PEM for the others), the allowed RSA
-//! key sizes, and the message ML-DSA signs ([TAP 21]). The primitives
-//! themselves come from a backend module selected with a cargo feature:
-//!
-//! - `rustcrypto` (default): the RustCrypto crates.
-//! - `aws-lc-rs`: [AWS-LC](https://github.com/aws/aws-lc) through `aws-lc-rs`.
-//!   It takes precedence if both features are enabled; disable default
-//!   features to avoid building the RustCrypto crates. For FIPS mode, enable
-//!   the `fips` feature of `aws-lc-rs` in your own manifest.
+//! key sizes, and the message ML-DSA signs ([TAP 21]).
 //!
 //! The backends behave identically, except that the `aws-lc-rs` backend only
-//! verifies RSA-PSS signatures whose salt is as long as the digest, the
-//! length that python-tuf, go-tuf and this crate sign with. (`aws-lc-rs`
-//! does not support other lengths; the `rustcrypto` backend accepts any.)
-//! Also, the `rustcrypto` backend only loads ML-DSA private keys that include
+//! verifies RSA-PSS signatures whose salt is as long as the digest.
+//! The `rustcrypto` backend only loads ML-DSA private keys that include
 //! the seed; `aws-lc-rs` also loads the expanded form alone.
 //!
 //! [TAP 21]: https://github.com/theupdateframework/taps/blob/master/tap21.md
-//!
-//! # Adding a backend
-//!
-//! A backend is a module that provides these items (see `rustcrypto.rs` and
-//! `aws_lc.rs`), gated behind a new cargo feature and selected below:
-//!
-//! - `Hasher`, with `new(HashAlgorithm)`, `update(&mut self, &[u8])` and
-//!   `finalize(self) -> Vec<u8>`.
-//! - `verify(Algorithm, public_key: &[u8], message, signature)`. Ed25519
-//!   public keys are the raw 32 bytes; other public keys are DER
-//!   `SubjectPublicKeyInfo`; ECDSA signatures are DER. ML-DSA is the pure
-//!   variant with an empty context (the TAP 21 message is built here). Fails
-//!   with `InvalidPublicKey` or `BadSignature`.
-//! - `check_public_key(Algorithm, public_key: &[u8])`, which fails with
-//!   `InvalidPublicKey` unless `public_key` (encoded as for `verify`) is a
-//!   valid key for the algorithm.
-//! - `rsa_modulus_bits(public_key: &[u8]) -> Result<usize, CryptoError>`: the
-//!   size of the modulus in bits, exactly (not its length in bytes times 8:
-//!   a 2047-bit key is not a 2048-bit key).
-//! - `SigningKey`, with `generate(Algorithm)`, `from_pkcs8_der(&[u8])`,
-//!   `algorithm(&self)`, `public_key(&self)` (encoded as for `verify`) and
-//!   `sign(&self, message)`. Generated RSA keys have 3072 bits, RSA keys
-//!   loaded from PKCS#8 use RSA-PSS with SHA-256, and RSA-PSS signatures use a
-//!   digest-length salt.
 
 use std::borrow::Cow;
 use std::error::Error as StdError;
@@ -155,17 +122,10 @@ impl Hasher {
 
 /// Verifies `signature` over `message` with a public key from metadata.
 ///
-/// The key's `keytype` must match its `scheme`. Supported combinations are
-/// those defined by the specification (`ed25519`/`ed25519`,
-/// `ecdsa`/`ecdsa-sha2-nistp256`, `rsa`/`rsassa-pss-sha256`), plus
-/// `ecdsa`/`ecdsa-sha2-nistp384`, `rsa`/`rsassa-pss-sha384` and
-/// `rsa`/`rsassa-pss-sha512`, which other implementations use, and
-/// `ml-dsa`/`ml-dsa-44/1`, `ml-dsa-65/1` and `ml-dsa-87/1` as defined by
-/// [TAP 21]. Public keys other than Ed25519 ones are PEM-encoded
-/// `SubjectPublicKeyInfo`, RSA keys must have 2048 to 8192 bits, and ECDSA
-/// signatures are DER-encoded.
+/// The key's `keytype` must match its `scheme`.
 ///
-/// [TAP 21]: https://github.com/theupdateframework/taps/blob/master/tap21.md
+/// Public keys other than Ed25519 ones are PEM-encoded `SubjectPublicKeyInfo`,
+/// RSA keys must have 2048 to 8192 bits, and ECDSA signatures are DER-encoded.
 pub fn verify_signature(key: &Key, message: &[u8], signature: &[u8]) -> Result<(), CryptoError> {
     let algorithm = Algorithm::from_scheme(&key.scheme)
         .filter(|_| key.scheme.key_type().as_ref() == Some(&key.keytype))
@@ -234,8 +194,15 @@ pub fn public_key_from_pem(scheme: &SignatureScheme, pem: &str) -> Result<Key, C
 
 /// The DER encoding of an Ed25519 `SubjectPublicKeyInfo` (RFC 8410) up to
 /// the key itself: the algorithm identifier and the bit string's header.
+///
+/// DER allows only one encoding of each value, and RFC 8410 requires the
+/// algorithm identifier to have no parameters, so every Ed25519 key in this
+/// form is exactly these bytes followed by the 32-byte key.
 const ED25519_SPKI_PREFIX: [u8; 12] = [
-    0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x03, 0x21, 0x00,
+    0x30, 0x2a, // SEQUENCE of 42 bytes: the SubjectPublicKeyInfo
+    0x30, 0x05, // SEQUENCE of 5 bytes: the AlgorithmIdentifier
+    0x06, 0x03, 0x2b, 0x65, 0x70, // OID 1.3.101.112 (id-Ed25519), with no parameters
+    0x03, 0x21, 0x00, // BIT STRING of 33 bytes, 0 unused bits: the key follows
 ];
 
 /// The error for a scheme that has no [`Algorithm`] (and so no known key

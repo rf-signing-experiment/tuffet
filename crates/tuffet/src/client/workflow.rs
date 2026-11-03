@@ -1,5 +1,4 @@
-//! The steps of the client workflow (section 5 of the specification), run
-//! against the transport and the metadata store.
+//! The steps of the client workflow (spec section 5).
 
 use std::io;
 
@@ -33,13 +32,7 @@ pub(super) struct Workflow<T, S> {
 
 impl<T: Transport, S: MetadataStore> Workflow<T, S> {
     /// 5.2: loads the trusted root metadata: the initial root or, without
-    /// one, the root in local storage, followed by the newer root versions
-    /// that earlier updates kept in local storage. Each version must be
-    /// signed by the root keys of the one before it, so roots in local
-    /// storage are only trusted if they descend from the initial root.
-    ///
-    /// The result is persisted as the root to start from without an initial
-    /// root.
+    /// one, the root in local storage. Then walks the local root chain.
     pub(super) fn load_trusted_root<P: Pouf>(
         &self,
         initial_root: Option<Vec<u8>>,
@@ -219,20 +212,19 @@ impl<T: Transport, S: MetadataStore> Workflow<T, S> {
         if paths::relative_path(&target.path).is_none() {
             return Err(Error::UnsafePath(target.path.clone()));
         }
-        let remote_path =
-            if root.signed().uses_consistent_snapshots() && self.config.prefix_targets_with_hash {
-                let digest = target
-                    .file
-                    .hashes
-                    .preferred()
-                    .expect("the verifier requires a supported hash");
-                match target.path.rsplit_once('/') {
-                    Some((dir, file_name)) => format!("{dir}/{digest}.{file_name}"),
-                    None => format!("{digest}.{}", target.path),
-                }
-            } else {
-                target.path.clone()
-            };
+        let remote_path = if root.signed().uses_consistent_snapshots() {
+            let digest = target
+                .file
+                .hashes
+                .preferred()
+                .expect("the verifier requires a supported hash");
+            match target.path.rsplit_once('/') {
+                Some((dir, file_name)) => format!("{dir}/{digest}.{file_name}"),
+                None => format!("{digest}.{}", target.path),
+            }
+        } else {
+            target.path.clone()
+        };
         tracing::debug!(remote_path, "fetching target");
         let fetched = self
             .transport

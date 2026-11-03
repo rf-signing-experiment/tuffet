@@ -1,28 +1,8 @@
 //! The high-level client, which runs the complete client workflow.
 //!
-//! An [`Updater`] fetches metadata through a [`Transport`], verifies it with
-//! [`TrustedMetadata`], persists what it trusts in a [`MetadataStore`], and
+//! An [`Updater`] *fetches* metadata through a [`Transport`], *verifies* it
+//! with [`TrustedMetadata`], and *persists* it in a [`MetadataStore`]. It also
 //! downloads and verifies target files.
-//!
-//! ```no_run
-//! use tuffet::store::FilesystemStore;
-//! use tuffet::transport::FilesystemTransport;
-//! use tuffet::Updater;
-//!
-//! # async fn example() -> tuffet::Result<()> {
-//! let transport = FilesystemTransport::new("/mnt/repo/metadata", "/mnt/repo/targets");
-//! let store = FilesystemStore::new("/var/lib/app/tuf")?;
-//! let mut updater = Updater::builder(transport, store)
-//!     .initial_root(std::fs::read("/usr/share/app/root.json")?)
-//!     .build()?;
-//!
-//! updater.refresh().await?;
-//! if let Some(target) = updater.get_target_info("app-1.2.tar.gz").await? {
-//!     updater.download_target_to(&target, "/tmp/app-1.2.tar.gz".as_ref()).await?;
-//! }
-//! # Ok(())
-//! # }
-//! ```
 
 use std::io::Write;
 use std::marker::PhantomData;
@@ -59,10 +39,6 @@ pub struct UpdaterConfig {
     /// The maximum size of targets metadata whose length snapshot metadata
     /// does not list, in bytes.
     pub targets_max_length: u64,
-    /// Whether to fetch targets as `HASH.FILENAME` when the repository uses
-    /// consistent snapshots. Some repositories store target files under their
-    /// plain names even then.
-    pub prefix_targets_with_hash: bool,
 }
 
 impl Default for UpdaterConfig {
@@ -74,18 +50,15 @@ impl Default for UpdaterConfig {
             timestamp_max_length: 16_384,
             snapshot_max_length: 2_000_000,
             targets_max_length: 5_000_000,
-            prefix_targets_with_hash: true,
         }
     }
 }
 
 /// A TUF client for one repository.
 ///
-/// Create one with [`Updater::builder`]. Call [`refresh`](Self::refresh) to
+/// Create with [`Updater::builder`]. Call [`refresh`](Self::refresh) to
 /// update the trusted metadata, then look up targets with
 /// [`get_target_info`](Self::get_target_info) and download them.
-///
-/// `P` is the [POUF](crate::pouf) of the repository's metadata.
 #[derive(Debug)]
 pub struct Updater<T, S, P: Pouf = Json> {
     workflow: Workflow<T, S>,
@@ -123,9 +96,8 @@ impl<T: Transport, S: MetadataStore, P: Pouf> Updater<T, S, P> {
     /// (5.4), snapshot (5.5) and top-level targets metadata (5.6). Delegated
     /// targets metadata is loaded when a target lookup needs it.
     ///
-    /// On error the updater trusts no metadata other than root until the
-    /// next successful refresh. New root versions accepted before the error
-    /// remain trusted.
+    /// On error, the updater trusts only root until the next successful
+    /// refresh. New root versions accepted before the error remain trusted.
     #[tracing::instrument(name = "refresh", skip_all)]
     pub async fn refresh_at(&mut self, reference_time: jiff::Timestamp) -> Result<()> {
         self.trusted = None;
@@ -251,10 +223,8 @@ impl<T: Transport, S: MetadataStore, P: Pouf> UpdaterBuilder<T, S, P> {
         }
     }
 
-    /// Creates the updater. It starts from the initial root or, without one,
-    /// from the root in local storage, followed by the newer root versions
-    /// that earlier updates persisted. Fails if there is neither an initial
-    /// root nor a root in local storage.
+    /// Creates the updater. Fails if there is neither an initial root nor a
+    /// root in local storage.
     pub fn build(self) -> Result<Updater<T, S, P>> {
         let workflow = Workflow {
             transport: self.transport,

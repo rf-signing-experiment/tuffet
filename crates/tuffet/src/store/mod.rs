@@ -1,9 +1,7 @@
 //! Local storage for trusted metadata.
 //!
-//! The client workflow persists every metadata file it accepts, so that the
-//! next update starts from it: the root versions extend the chain of trust
-//! from the initial root, and the other files protect against rollback
-//! attacks and avoid needless downloads.
+//! The client persists metadata files so that the next update has a starting
+//! point to avoid repeating downloads and to prevent rollback attacks.
 
 use std::io;
 use std::sync::Arc;
@@ -23,8 +21,9 @@ pub use memory::MemoryStore;
 ///
 /// Local storage is trusted to protect against rollback attacks: anyone who
 /// can write to it can make the client accept older metadata. Root metadata
-/// in it is only trusted if it descends from the updater's initial root;
-/// without an initial root, anyone who can write to local storage can make
+/// in it is only trusted if it descends from the updater's initial root.
+///
+/// Without an initial root, anyone who can write to local storage can make
 /// the client trust arbitrary metadata.
 pub trait MetadataStore: Send + Sync {
     /// Loads a file, or returns `None` if it does not exist.

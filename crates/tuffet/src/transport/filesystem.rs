@@ -12,10 +12,10 @@ use crate::paths;
 
 const CHUNK_SIZE: usize = 64 * 1024;
 
-/// Reads a repository from local directories, for example a mounted mirror.
+/// Reads a repository from local directories.
 ///
-/// Reads are blocking. That is fine for local disks, but if it matters to
-/// your executor, drive the updater from a thread that may block.
+/// Reads use blocking I/O. If that matters for your executor, use a thread
+/// or re-implement using async methods from your async runtime.
 #[derive(Debug, Clone)]
 pub struct FilesystemTransport {
     metadata_dir: PathBuf,

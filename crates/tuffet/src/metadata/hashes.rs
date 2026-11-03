@@ -172,12 +172,10 @@ impl FileVerifier {
         self.finish()
     }
 
-    /// The error for a transport that failed to fetch the file. A file it
-    /// rejected as too long is reported as [`update`](Self::update) would.
+    /// Converts a `TransportError` to an `Error`.
     ///
-    /// Callers report a file that the transport did not find themselves, as
-    /// missing metadata or a missing target, so "not found" partway through
-    /// the file is a failure like any other.
+    /// Callers handle a file that doesn't exist themselves, so `NotFound`
+    /// here means a download failed partway and is reported as `Transport`.
     pub(crate) fn fetch_error(&self, error: TransportError) -> Error {
         let name = self.name.clone();
         match error {

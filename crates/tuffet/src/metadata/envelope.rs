@@ -35,7 +35,7 @@ impl Signature {
 /// `P` is the [POUF](crate::pouf) that defines how metadata is encoded; it
 /// defaults to [`Json`].
 ///
-/// A `Metadata` remembers the canonical bytes its signatures cover. When it is
+/// `Metadata` remembers the canonical bytes its signatures cover. When it is
 /// decoded, these are the canonical form of the payload *exactly as
 /// received*, so signatures also cover fields this implementation does not
 /// understand. When it is created with [`Metadata::new`], they are computed

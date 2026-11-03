@@ -1,6 +1,6 @@
 //! Canonical JSON, the encoding that TUF JSON metadata is signed over.
 //!
-//! This is the [OLPC dialect] as produced by the reference implementation:
+//! Based on the python-tuf reference TUF implementation:
 //!
 //! - no whitespace outside strings;
 //! - object members sorted by key, comparing UTF-8 bytes (equivalently,
@@ -9,7 +9,8 @@
 //!   characters, including control characters, are written as raw UTF-8;
 //! - numbers must be integers.
 //!
-//! [OLPC dialect]: https://web.archive.org/web/20251209150702/http://wiki.laptop.org/go/Canonical_JSON
+//! Note that this is *NOT* always valid JSON, and cannot always be decoded
+//! by parsers like `serde_json`.
 
 use serde_json::Value;
 
