@@ -67,28 +67,16 @@ files. It is also the API for creating metadata (see
 
 ## Features
 
-| Crate | Feature | Effect |
-| --- | --- | --- |
-| `tuffet` | `rustcrypto` (default) | Cryptography from the RustCrypto crates ([`rustcrypto.rs`](crates/tuffet/src/crypto/rustcrypto.rs)). |
-| `tuffet` | `aws-lc-rs` | Cryptography from AWS-LC ([`aws_lc.rs`](crates/tuffet/src/crypto/aws_lc.rs)). Takes precedence over `rustcrypto`; disable default features to leave RustCrypto out. Enable `aws-lc-rs/fips` in your own manifest for FIPS mode. |
-| `tuffet-http` | `rustls` (default), `native-tls` | TLS implementation of the default HTTP client. |
-| `tuffet-http` | `rustcrypto` (default), `aws-lc-rs` | Passed through to `tuffet`. With `rustls`, `aws-lc-rs` means a single crypto library. |
-
-The backends behave the same, with two exceptions:
-
-- The `aws-lc-rs` backend only verifies RSA-PSS signatures whose salt is as
-  long as the digest, because `aws-lc-rs` offers no other option. That is the
-  length python-tuf, go-tuf and this crate sign with; the `rustcrypto` backend
-  also accepts other lengths.
-- The `rustcrypto` backend only loads ML-DSA private keys that include the
-  seed (OpenSSL's default form and the seed-only form); `aws-lc-rs` also loads
-  keys that hold just the expanded key.
+| Feature | Effect |
+| --- | --- |
+| `rustcrypto` (default) | Cryptography from the RustCrypto crates ([`rustcrypto.rs`](crates/tuffet/src/crypto/rustcrypto.rs)). |
+| `aws-lc-rs` | Cryptography from AWS-LC ([`aws_lc.rs`](crates/tuffet/src/crypto/aws_lc.rs)). Takes precedence over `rustcrypto` if both are enabled. Use `default-features = false` avoid building RustCrypto. |
 
 ## Testing
 
 ```sh
-cargo test --workspace                                     # rustcrypto backend
-cargo test -p tuffet --no-default-features -F aws-lc-rs    # aws-lc-rs backend
+cargo test --workspace --no-default-features -F rustcrypto,native-tls  # rustcrypto backend
+cargo test --workspace --no-default-features -F aws-lc-rs              # aws-lc-rs backend
 ```
 
 ### TUF Conformance Testing

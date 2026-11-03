@@ -2,6 +2,8 @@
 name = "tuffet-http"
 version = "0.1.0"
 description = "An HTTP transport for the tuffet TUF client, built on reqwest"
+keywords = ["tuf", "the-update-framework"]
+categories = ["network-programming", "cryptography"]
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -21,13 +23,13 @@ pre-release-replacements = [
 workspace = true
 
 [features]
-default = ["rustls", "rustcrypto"]
-# TLS implementation used by the default client.
-rustls = ["reqwest/rustls"]
-native-tls = ["reqwest/native-tls"]
-# Cryptography backend of tuffet.
-rustcrypto = ["tuffet/rustcrypto"]
-aws-lc-rs = ["tuffet/aws-lc-rs"]
+default = ["aws-lc-rs"]
+# Each feature picks the TLS implementation of the default client and the
+# cryptography backend of tuffet (see the README).
+# rustls for TLS and AWS-LC for TUF: AWS-LC is the only crypto library.
+aws-lc-rs = ["reqwest/rustls", "tuffet/aws-lc-rs"]
+# The platform's TLS library and RustCrypto for TUF.
+native-tls = ["reqwest/native-tls", "tuffet/rustcrypto"]
 
 [dependencies]
 futures-util.workspace = true

@@ -20,8 +20,10 @@
 //! ```
 //!
 //! TLS is optional for TUF's security, but protects the privacy of what is
-//! downloaded. The `rustls` (default) and `native-tls` features select the
-//! TLS implementation of the default client; pass your own client to
+//! downloaded. The features select both the TLS implementation of the
+//! default client and the cryptography backend of `tuffet`: `aws-lc-rs`
+//! (default) uses rustls and AWS-LC, `native-tls` uses the platform's TLS
+//! and RustCrypto. Pass your own client to
 //! [`HttpTransport::with_client`] to configure timeouts, proxies or trusted
 //! certificates. Give it timeouts: without them, a server that stops sending
 //! data stalls the update forever.

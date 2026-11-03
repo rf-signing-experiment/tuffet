@@ -15,8 +15,8 @@ workspace = true
 [features]
 default = ["rustcrypto"]
 # Cryptography backend of tuffet.
-rustcrypto = ["tuffet/rustcrypto", "tuffet-http/rustcrypto"]
-aws-lc-rs = ["tuffet/aws-lc-rs", "tuffet-http/aws-lc-rs"]
+rustcrypto = ["tuffet/rustcrypto"]
+aws-lc-rs = ["tuffet/aws-lc-rs"]
 
 [dependencies]
 clap = { version = "4.6.7", features = ["derive"] }

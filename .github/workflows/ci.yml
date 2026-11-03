@@ -65,7 +65,7 @@ jobs:
       - name: Install Rust
         run: rustup toolchain install "$RUST_TOOLCHAIN_STABLE" --profile minimal --component clippy --no-self-update && rustup default "$RUST_TOOLCHAIN_STABLE"
       - name: Clippy (rustcrypto)
-        run: cargo clippy --workspace --all-targets --locked
+        run: cargo clippy --workspace --all-targets --locked --no-default-features --features rustcrypto,native-tls
       - name: Clippy (aws-lc-rs)
         run: cargo clippy --workspace --all-targets --locked --no-default-features --features aws-lc-rs
       - name: Clippy (all features)
@@ -92,9 +92,9 @@ jobs:
       - name: Install Rust
         run: rustup toolchain install "$RUST_TOOLCHAIN_STABLE" --profile minimal --no-self-update && rustup default "$RUST_TOOLCHAIN_STABLE"
       - name: Build (rustcrypto)
-        run: cargo build --workspace --all-targets --locked --profile ${{ matrix.profile }}
+        run: cargo build --workspace --all-targets --locked --profile ${{ matrix.profile }} --no-default-features --features rustcrypto,native-tls
       - name: Test (rustcrypto)
-        run: cargo test --workspace --locked --profile ${{ matrix.profile }}
+        run: cargo test --workspace --locked --profile ${{ matrix.profile }} --no-default-features --features rustcrypto,native-tls
       - name: Build (aws-lc-rs)
         run: cargo build --workspace --all-targets --locked --profile ${{ matrix.profile }} --no-default-features --features aws-lc-rs
       - name: Test (aws-lc-rs)
@@ -150,7 +150,7 @@ jobs:
           msrv=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].rust_version')
           rustup toolchain install "$msrv" --profile minimal --no-self-update && rustup default "$msrv"
       - name: Test (rustcrypto)
-        run: cargo test --workspace --locked
+        run: cargo test --workspace --locked --no-default-features --features rustcrypto,native-tls
       - name: Test (all features)
         run: cargo test --workspace --locked --all-features
 
