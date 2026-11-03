@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 <!-- next-header -->
 ## [Unreleased] - ReleaseDate
 
+## [0.1.0] - 2026-11-03
+
 ### Added
 
 - First release: a client for The Update Framework, following version 1.0.36
@@ -21,4 +23,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Cryptography backends `rustcrypto` (default) and `aws-lc-rs`.
 
 <!-- next-url -->
-[Unreleased]: https://github.com/rf-signing-experiment/tuffet/compare/dd52c7a...HEAD
+[Unreleased]: https://github.com/rf-signing-experiment/tuffet/compare/tuffet-v0.1.0...HEAD
+[0.1.0]: https://github.com/rf-signing-experiment/tuffet/compare/dd52c7a...tuffet-v0.1.0
