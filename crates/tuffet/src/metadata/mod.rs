@@ -62,6 +62,14 @@ pub enum RoleType {
 }
 
 impl RoleType {
+    /// Every top-level role, in the order the client workflow updates them.
+    pub const TOP_LEVEL_ROLES: [RoleType; 4] = [
+        RoleType::Root,
+        RoleType::Timestamp,
+        RoleType::Snapshot,
+        RoleType::Targets,
+    ];
+
     /// The role's name, which is also the `_type` of its metadata.
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -74,7 +82,9 @@ impl RoleType {
 
     /// Whether `name` is one of the top-level role names.
     pub fn is_top_level(name: &str) -> bool {
-        ["root", "timestamp", "snapshot", "targets"].contains(&name)
+        RoleType::TOP_LEVEL_ROLES
+            .iter()
+            .any(|role| role.as_str() == name)
     }
 }
 

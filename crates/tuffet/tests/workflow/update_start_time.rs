@@ -63,12 +63,7 @@ fn expiry_is_checked_against_the_update_start_time() {
 /// exactly when the update starts has expired.
 #[test]
 fn metadata_that_expires_at_the_update_start_time_has_expired() {
-    for role in [
-        RoleType::Root,
-        RoleType::Timestamp,
-        RoleType::Snapshot,
-        RoleType::Targets,
-    ] {
+    for role in RoleType::TOP_LEVEL_ROLES {
         let mut repo = TestRepo::new();
         publish_expiring(&mut repo, role, now());
         let mut client = repo.client();

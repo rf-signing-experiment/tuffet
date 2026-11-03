@@ -15,13 +15,6 @@ use tuffet::metadata::{
 use super::keys::{key, key_id};
 use super::{Client, RecordingTransport, far_future, now};
 
-const TOP_LEVEL_ROLES: [RoleType; 4] = [
-    RoleType::Root,
-    RoleType::Timestamp,
-    RoleType::Snapshot,
-    RoleType::Targets,
-];
-
 /// Configures a new [`TestRepo`].
 pub struct RepoBuilder {
     name: String,
@@ -103,7 +96,7 @@ impl RepoBuilder {
             published_targets: BTreeMap::new(),
             keys_created: 0,
         };
-        for role in TOP_LEVEL_ROLES {
+        for role in RoleType::TOP_LEVEL_ROLES {
             let (count, threshold) = self.keys.get(&role).copied().unwrap_or((1, 1));
             for _ in 0..count {
                 repo.add_key(role);
@@ -496,7 +489,7 @@ impl TestRepo {
     pub fn rotate_key(&mut self, role: RoleType) -> Arc<PrivateKey> {
         let old = std::mem::take(&mut self.root.roles.get_mut(role).keyids);
         for keyid in old {
-            let used = TOP_LEVEL_ROLES
+            let used = RoleType::TOP_LEVEL_ROLES
                 .iter()
                 .any(|&role| self.root.roles.get(role).keyids.contains(&keyid));
             if !used {

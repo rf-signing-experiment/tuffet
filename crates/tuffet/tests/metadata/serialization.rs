@@ -49,12 +49,7 @@ fn snapshot_path(name: &str) -> PathBuf {
 #[test]
 fn root_json() {
     let mut root = Root::new(expires());
-    for role in [
-        RoleType::Root,
-        RoleType::Timestamp,
-        RoleType::Snapshot,
-        RoleType::Targets,
-    ] {
+    for role in RoleType::TOP_LEVEL_ROLES {
         let key = key(role.as_str());
         root.add_key(role, key_id(&key), key.public_key().clone());
     }

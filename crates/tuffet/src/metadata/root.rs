@@ -150,12 +150,7 @@ impl Role for Root {
 
     fn validate<P: Pouf>(&self) -> Result<()> {
         validate_common(self)?;
-        for role in [
-            RoleType::Root,
-            RoleType::Timestamp,
-            RoleType::Snapshot,
-            RoleType::Targets,
-        ] {
+        for role in RoleType::TOP_LEVEL_ROLES {
             let role_keys = self.roles.get(role);
             validate_role_keys(role.as_str(), &role_keys.keyids, role_keys.threshold)?;
         }

@@ -60,12 +60,7 @@ fn the_updater_names_metadata_files_with_the_extension_of_its_pouf() {
     let signer = key("all roles");
     let mut root = Root::new(far_future());
     root.consistent_snapshot = Some(false);
-    for role in [
-        RoleType::Root,
-        RoleType::Timestamp,
-        RoleType::Snapshot,
-        RoleType::Targets,
-    ] {
+    for role in RoleType::TOP_LEVEL_ROLES {
         let public = signer.public_key();
         root.add_key(role, key_id(public), public.clone());
     }
