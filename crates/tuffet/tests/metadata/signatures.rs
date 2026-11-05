@@ -17,8 +17,8 @@ use tuffet::metadata::{
 };
 use tuffet::pouf::{Json, Pouf};
 
-use crate::support::far_future;
 use crate::support::keys::{key, key_id};
+use crate::support::{data, far_future};
 
 /// Root metadata that trusts `signers` for the targets role, with
 /// `threshold`.
@@ -138,6 +138,64 @@ fn a_key_counts_once_even_under_several_key_ids() {
             ..
         })
     );
+}
+
+/// Keys should be told apart by their material, not by the strings that
+/// encode it. But a key that a role lists twice, with its KEYVAL encoded in
+/// two ways that decode to the same key, counts twice: one signature meets a
+/// threshold of 2.
+#[test]
+fn a_key_counts_once_however_its_public_key_is_encoded() {
+    let private = |name: &str| PrivateKey::from_pkcs8_pem(&data::crypto_text(name)).unwrap();
+    let ed25519 = key("signer");
+    let (p256, rsa, ml_dsa) = (
+        private("p256.key.pem"),
+        private("rsa.key.pem"),
+        private("ml-dsa-44.key.pem"),
+    );
+    let public = |signer: &PrivateKey| signer.public_key().keyval.public.clone();
+    #[allow(unused_mut)]
+    let mut variants = vec![
+        (&*ed25519, public(&ed25519).to_uppercase()),
+        (&p256, public(&p256).replace('\n', "\r\n")),
+        (&p256, data::crypto_text("p256.compressed.pub.pem")),
+        (&rsa, format!(" {}\n", public(&rsa))),
+        (&ml_dsa, public(&ml_dsa).trim_end().to_owned()),
+    ];
+    // `aws-lc-rs` also takes the bare point, without its SubjectPublicKeyInfo.
+    #[cfg(feature = "aws-lc-rs")]
+    {
+        let (_, spki) = pem_rfc7468::decode_vec(public(&p256).as_bytes()).unwrap();
+        let point = &spki[spki.len() - 65..];
+        let bare = pem_rfc7468::encode_string("PUBLIC KEY", pem_rfc7468::LineEnding::LF, point);
+        variants.push((&p256, bare.unwrap()));
+    }
+    for (signer, encoded) in variants {
+        let key = signer.public_key().clone();
+        assert_ne!(encoded, key.keyval.public);
+        let mut variant = key.clone();
+        variant.keyval.public = encoded;
+        let (id, variant_id) = (KeyId::new("key"), KeyId::new("variant"));
+
+        let mut targets = unsigned_targets();
+        let sig = signer.sign(targets.canonical_signed()).unwrap();
+        targets.add_signature(Signature::new(id.clone(), sig.clone()));
+        targets.add_signature(Signature::new(variant_id.clone(), sig));
+
+        // Each encoding is a valid one for the key.
+        for (id, key) in [(&id, &key), (&variant_id, &variant)] {
+            let mut root = Root::new(far_future());
+            root.add_key(RoleType::Targets, id.clone(), key.clone());
+            root.verify_role(&targets).unwrap();
+        }
+
+        let mut root = Root::new(far_future());
+        root.add_key(RoleType::Targets, id, key);
+        root.add_key(RoleType::Targets, variant_id, variant.clone());
+        root.roles.targets.threshold = 2;
+        // BUG: the key counts twice, so one signature meets the threshold.
+        root.verify_role(&targets).unwrap();
+    }
 }
 
 /// Keys whose type or scheme tuffet does not support (4.2.2: "TUF is not
