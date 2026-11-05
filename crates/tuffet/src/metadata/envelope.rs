@@ -169,8 +169,8 @@ impl<T: Role, P: Pouf> Metadata<T, P> {
     /// errors.
     ///
     /// Each key counts at most once, even if it is listed under several key
-    /// IDs. Signatures by other keys, by unknown keys and with unsupported
-    /// schemes are ignored.
+    /// IDs, or with its `keyval.public` encoded in different ways. Signatures by
+    /// other keys, unknown keys and unsupported schemes are ignored.
     pub fn verify_signatures(
         &self,
         role: &str,
@@ -179,19 +179,15 @@ impl<T: Role, P: Pouf> Metadata<T, P> {
         threshold: u64,
     ) -> Result<()> {
         // Identifies keys by their material rather than by key ID.
-        let mut counted: HashSet<(&str, &str)> = HashSet::new();
+        let mut counted: HashSet<Vec<u8>> = HashSet::new();
         for keyid in keyids {
             let Some(key) = keys.get(keyid) else { continue };
             let Some(signature) = self.signatures.iter().find(|sig| sig.keyid == *keyid) else {
                 continue;
             };
-            let material = (key.keytype.as_str(), key.keyval.public.as_str());
-            if counted.contains(&material) {
-                continue;
-            }
-            match crypto::verify_signature(key, &self.canonical_signed, &signature.sig) {
-                Ok(()) => {
-                    counted.insert(material);
+            match crypto::verify_signature_return_der(key, &self.canonical_signed, &signature.sig) {
+                Ok(public_key_der) => {
+                    counted.insert(public_key_der);
                 }
                 Err(error) => tracing::debug!(role, %keyid, %error, "ignoring signature"),
             }

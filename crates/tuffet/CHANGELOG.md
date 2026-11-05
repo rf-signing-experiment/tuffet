@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 <!-- next-header -->
 ## [Unreleased] - ReleaseDate
 
+### Security
+
+- Ensure signature thresholds count each key only once based on key material.
+  Before, a key that a role listed twice, with `keyval.public` encoded in two
+  different ways (hex casing, PEM whitespace or line endings, etc), counted twice.
+
 ## [0.1.0] - 2026-11-03
 
 ### Added

@@ -74,6 +74,22 @@ pub(super) fn check_public_key(algorithm: Algorithm, public_key: &[u8]) -> Resul
     VerifyingKey::decode(algorithm, public_key).map(drop)
 }
 
+pub(super) fn public_key_spki(
+    algorithm: Algorithm,
+    public_key: &[u8],
+) -> Result<Vec<u8>, CryptoError> {
+    let der = match VerifyingKey::decode(algorithm, public_key)? {
+        VerifyingKey::Ed25519(key) => key.to_public_key_der(),
+        VerifyingKey::P256(key) => key.to_public_key_der(),
+        VerifyingKey::P384(key) => key.to_public_key_der(),
+        VerifyingKey::RsaPss(_, key) => key.to_public_key_der(),
+        VerifyingKey::MlDsa44(key) => key.to_public_key_der(),
+        VerifyingKey::MlDsa65(key) => key.to_public_key_der(),
+        VerifyingKey::MlDsa87(key) => key.to_public_key_der(),
+    };
+    Ok(der.map_err(invalid_public_key)?.into_vec())
+}
+
 pub(super) fn rsa_modulus_bits(public_key: &[u8]) -> Result<usize, CryptoError> {
     let key: RsaPublicKey = from_spki(public_key)?;
     Ok(key.n().bits() as usize)
