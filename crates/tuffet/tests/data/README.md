@@ -11,7 +11,10 @@
   key size limits: `rsa1024.pub.pem`, `rsa2047.*` (with
   `rsa2047-pss.sig`, an RSA-PSS SHA-256 signature with a digest-length
   salt), `rsa8192.pub.pem` and `rsa8200.pub.pem`, made with
-  `openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:BITS`. The
+  `openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:BITS`.
+  `p256.compressed.pub.pem` is the P-256 public key with its point
+  compressed, made with
+  `openssl ec -pubin -in p256.pub.pem -conv_form compressed -pubout`. The
   private keys are test keys only.
 - `python-tuf/`: the test repository of the TUF reference implementation,
   copied unmodified from
