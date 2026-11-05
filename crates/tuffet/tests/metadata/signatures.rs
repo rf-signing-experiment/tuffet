@@ -140,10 +140,9 @@ fn a_key_counts_once_even_under_several_key_ids() {
     );
 }
 
-/// Keys should be told apart by their material, not by the strings that
-/// encode it. But a key that a role lists twice, with its KEYVAL encoded in
-/// two ways that decode to the same key, counts twice: one signature meets a
-/// threshold of 2.
+/// Keys are told apart by their material, not by the strings that encode it:
+/// a key that a role lists twice, with its KEYVAL encoded in two ways that
+/// decode to the same key, counts once.
 #[test]
 fn a_key_counts_once_however_its_public_key_is_encoded() {
     let private = |name: &str| PrivateKey::from_pkcs8_pem(&data::crypto_text(name)).unwrap();
@@ -193,8 +192,16 @@ fn a_key_counts_once_however_its_public_key_is_encoded() {
         root.add_key(RoleType::Targets, id, key);
         root.add_key(RoleType::Targets, variant_id, variant.clone());
         root.roles.targets.threshold = 2;
-        // BUG: the key counts twice, so one signature meets the threshold.
-        root.verify_role(&targets).unwrap();
+        assert_matches!(
+            root.verify_role(&targets),
+            Err(Error::SignatureThreshold {
+                valid: 1,
+                threshold: 2,
+                ..
+            }),
+            "{:?}",
+            variant.keyval.public
+        );
     }
 }
 

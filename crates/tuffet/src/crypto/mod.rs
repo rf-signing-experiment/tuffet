@@ -127,6 +127,17 @@ impl Hasher {
 /// Public keys other than Ed25519 ones are PEM-encoded `SubjectPublicKeyInfo`,
 /// RSA keys must have 2048 to 8192 bits, and ECDSA signatures are DER-encoded.
 pub fn verify_signature(key: &Key, message: &[u8], signature: &[u8]) -> Result<(), CryptoError> {
+    verify_signature_return_der(key, message, signature)?;
+    Ok(())
+}
+
+/// Verifies `signature` over `message` with a public key from metadata.
+/// Returns the canonical DER encoded public key.
+pub(crate) fn verify_signature_return_der(
+    key: &Key,
+    message: &[u8],
+    signature: &[u8],
+) -> Result<Vec<u8>, CryptoError> {
     let algorithm = Algorithm::from_scheme(&key.scheme)
         .filter(|_| key.scheme.key_type().as_ref() == Some(&key.keytype))
         .ok_or_else(|| CryptoError::UnsupportedScheme {
@@ -139,7 +150,8 @@ pub fn verify_signature(key: &Key, message: &[u8], signature: &[u8]) -> Result<(
         &public_key,
         &algorithm.message(message),
         signature,
-    )
+    )?;
+    backend::public_key_spki(algorithm, &public_key)
 }
 
 /// The message that an ML-DSA key signs for a metadata payload (its

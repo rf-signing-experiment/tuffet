@@ -62,6 +62,16 @@ pub(super) fn check_public_key(algorithm: Algorithm, public_key: &[u8]) -> Resul
     parse_public_key(algorithm, public_key).map(drop)
 }
 
+pub(super) fn public_key_spki(
+    algorithm: Algorithm,
+    public_key: &[u8],
+) -> Result<Vec<u8>, CryptoError> {
+    let der = parse_public_key(algorithm, public_key)?
+        .as_der()
+        .map_err(invalid_public_key)?;
+    Ok(der.as_ref().to_vec())
+}
+
 fn parse_public_key(
     algorithm: Algorithm,
     public_key: &[u8],
