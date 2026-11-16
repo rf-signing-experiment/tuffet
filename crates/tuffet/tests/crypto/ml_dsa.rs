@@ -109,8 +109,8 @@ fn private_keys_load_in_the_forms_with_a_seed() {
     ] {
         let signer = PrivateKey::from_pkcs8_pem(&data::crypto_text(private)).unwrap();
         assert_eq!(
-            signer.public_key().keyval.public.trim(),
-            data::crypto_text(public)
+            signer.public_key().keyval.public.as_deref().map(str::trim),
+            Some(&*data::crypto_text(public))
         );
     }
 
@@ -118,8 +118,8 @@ fn private_keys_load_in_the_forms_with_a_seed() {
         PrivateKey::from_pkcs8_pem(&data::crypto_text("ml-dsa-44.expanded.key.pem"));
     if cfg!(feature = "aws-lc-rs") {
         assert_eq!(
-            expanded_only.unwrap().public_key().keyval.public.trim(),
-            data::crypto_text("ml-dsa-44.pub.pem")
+            expanded_only.unwrap().public_key().keyval.public,
+            Some(format!("{}\n", data::crypto_text("ml-dsa-44.pub.pem")))
         );
     } else {
         assert_matches!(expanded_only, Err(CryptoError::InvalidPrivateKey(_)));

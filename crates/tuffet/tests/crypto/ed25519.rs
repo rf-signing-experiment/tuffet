@@ -33,7 +33,7 @@ fn verifies_the_first_test_vector_of_rfc8032() {
 #[test]
 fn public_keys_are_32_bytes_in_hex() {
     let generated = PrivateKey::generate(&SignatureScheme::Ed25519).unwrap();
-    let public = &generated.public_key().keyval.public;
+    let public = generated.public_key().keyval.public.as_deref().unwrap();
     assert_eq!(public.len(), 64);
     assert!(
         public

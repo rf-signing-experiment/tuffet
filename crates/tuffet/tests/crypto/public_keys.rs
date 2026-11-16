@@ -38,11 +38,12 @@ fn keys_are_described_as_private_keys_describe_them() {
     for signer in signers {
         let expected = signer.public_key();
         let scheme = &expected.scheme;
+        let public = expected.keyval.public.as_deref().unwrap();
         let described = if *scheme == SignatureScheme::Ed25519 {
-            let raw = hex::decode(&expected.keyval.public).unwrap();
+            let raw = hex::decode(public).unwrap();
             public_key_from_spki(scheme, &[&ED25519_SPKI_PREFIX[..], &raw].concat()).unwrap()
         } else {
-            public_key_from_pem(scheme, &expected.keyval.public).unwrap()
+            public_key_from_pem(scheme, public).unwrap()
         };
         assert_eq!(&described, expected, "{scheme}");
         assert_eq!(
@@ -63,7 +64,8 @@ fn pem_keys_are_encoded_again() {
         (SignatureScheme::MlDsa87V1, "ml-dsa-87.pub.pem"),
     ] {
         let as_is = public_key_from_pem(&scheme, &data::crypto_text(pem)).unwrap();
-        assert_eq!(as_is.keyval.public, format!("{}\n", data::crypto_text(pem)));
+        let public = format!("{}\n", data::crypto_text(pem));
+        assert_eq!(as_is.keyval.public, Some(public));
 
         let crlf = format!("\n  {}\r\n", data::crypto_text(pem).replace('\n', "\r\n"));
         let reencoded = public_key_from_pem(&scheme, &crlf).unwrap();
@@ -184,10 +186,11 @@ fn described_keys_verify_signatures() {
     )
     .unwrap();
     assert_eq!(
-        described.keyval.public.trim(),
+        described.keyval.public.as_deref().map(str::trim),
         key(SignatureScheme::EcdsaSha2Nistp256, "p256.pub.pem")
             .keyval
             .public
+            .as_deref()
     );
     verify_signature(&described, &message(), &data::crypto("p256.sig")).unwrap();
 }

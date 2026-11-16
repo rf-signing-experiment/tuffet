@@ -8,7 +8,7 @@ use std::assert_matches;
 
 use serde_json::json;
 use tuffet::Error;
-use tuffet::crypto::{HashAlgorithm, Signer};
+use tuffet::crypto::{CryptoError, HashAlgorithm, Signer, verify_signature};
 use tuffet::metadata::{
     DelegatedRole, Delegations, Key, KeyId, KeyType, Metadata, RoleType, Root, Signature,
     SignatureScheme, Targets,
@@ -42,6 +42,33 @@ fn keys_of_any_type_and_scheme_are_decoded() {
         SignatureScheme::Other("sphincs+".to_owned())
     );
     assert_eq!(KeyType::from("dsa"), KeyType::Other("dsa".to_owned()));
+}
+
+/// KEYVAL is "a dictionary containing the public portion of the key", and
+/// only the key types of the specification define it as `{"public":
+/// PUBLIC}`. A key that is described in another way (here, as
+/// securesystemslib describes a Sigstore identity) is decoded and encoded
+/// unchanged, and cannot verify signatures.
+#[test]
+fn keys_without_a_public_value_are_decoded() {
+    let json = json!({
+        "keytype": "sigstore-oidc",
+        "scheme": "Fulcio",
+        "keyval": {"identity": "user@example.com", "issuer": "https://issuer.example.com"},
+    });
+    let key: Key = serde_json::from_value(json.clone()).unwrap();
+    assert_eq!(key.keyval.public, None);
+    assert_eq!(key.keyval.unrecognized_fields.len(), 2);
+    assert_eq!(serde_json::to_value(&key).unwrap(), json);
+
+    let mut ed25519 = json!({"keytype": "ed25519", "scheme": "ed25519", "keyval": {}});
+    let key: Key = serde_json::from_value(ed25519.clone()).unwrap();
+    assert_matches!(
+        verify_signature(&key, b"message", &[0; 64]),
+        Err(CryptoError::InvalidPublicKey(reason)) if reason.contains("keyval.public")
+    );
+    ed25519["keyval"]["public"] = json!(7);
+    assert!(serde_json::from_value::<Key>(ed25519).is_err());
 }
 
 /// 4.2.1: a KEYID is "a hexdigest of the SHA-256 hash of the canonical form

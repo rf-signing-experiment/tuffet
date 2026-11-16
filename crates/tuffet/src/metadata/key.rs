@@ -49,7 +49,7 @@ impl Key {
             keytype,
             scheme,
             keyval: KeyVal {
-                public,
+                public: Some(public),
                 unrecognized_fields: BTreeMap::new(),
             },
             unrecognized_fields: BTreeMap::new(),
@@ -60,8 +60,12 @@ impl Key {
 /// The public portion of a key (`KEYVAL`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct KeyVal {
-    /// The encoded public key: hex for Ed25519, PEM for ECDSA and RSA.
-    pub public: String,
+    /// The encoded public key: hex for Ed25519, PEM for the other supported
+    /// key types. Key types this implementation does not support may
+    /// describe their keys with other fields instead, which are kept in
+    /// `unrecognized_fields`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub public: Option<String>,
     #[serde(flatten)]
     pub unrecognized_fields: UnrecognizedFields,
 }

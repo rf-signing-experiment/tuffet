@@ -91,7 +91,7 @@ fn public_keys_must_be_pem_encoded() {
             .collect(),
     ] {
         let mut key = key(SignatureScheme::EcdsaSha2Nistp256, "p256.pub.pem");
-        key.keyval.public = invalid.clone();
+        key.keyval.public = Some(invalid.clone());
         assert_matches!(
             verify_signature(&key, &message(), &signature),
             Err(CryptoError::InvalidPublicKey(_)),

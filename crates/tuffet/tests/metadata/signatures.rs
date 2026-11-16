@@ -152,7 +152,7 @@ fn a_key_counts_once_however_its_public_key_is_encoded() {
         private("rsa.key.pem"),
         private("ml-dsa-44.key.pem"),
     );
-    let public = |signer: &PrivateKey| signer.public_key().keyval.public.clone();
+    let public = |signer: &PrivateKey| signer.public_key().keyval.public.clone().unwrap();
     let variants = [
         (&*ed25519, public(&ed25519).to_uppercase()),
         (&p256, public(&p256).replace('\n', "\r\n")),
@@ -161,9 +161,9 @@ fn a_key_counts_once_however_its_public_key_is_encoded() {
     ];
     for (signer, encoded) in variants {
         let key = signer.public_key().clone();
-        assert_ne!(encoded, key.keyval.public);
+        assert_ne!(Some(&encoded), key.keyval.public.as_ref());
         let mut variant = key.clone();
-        variant.keyval.public = encoded;
+        variant.keyval.public = Some(encoded);
         let (id, variant_id) = (KeyId::new("key"), KeyId::new("variant"));
 
         let mut targets = unsigned_targets();
@@ -190,7 +190,7 @@ fn a_key_counts_once_however_its_public_key_is_encoded() {
                 ..
             }),
             "{:?}",
-            variant.keyval.public
+            variant.keyval.public.as_deref()
         );
     }
 }
@@ -209,9 +209,21 @@ fn keys_tuffet_cannot_use_are_ignored() {
     let unsupported_id = KeyId::new("unsupported");
     let mut root = root_trusting(&[&supported], 1);
     root.add_key(RoleType::Targets, unsupported_id.clone(), unsupported);
+    // A key that has no PUBLIC, as tuf-on-ci lists Sigstore identities.
+    let identity = json!({
+        "keytype": "sigstore-oidc",
+        "scheme": "Fulcio",
+        "keyval": {"identity": "user@example.com", "issuer": "https://issuer.example.com"},
+    });
+    let (identity, identity_id) = (
+        serde_json::from_value(identity).unwrap(),
+        KeyId::new("identity"),
+    );
+    root.add_key(RoleType::Targets, identity_id.clone(), identity);
 
     let mut targets = unsigned_targets();
     targets.add_signature(Signature::new(unsupported_id, vec![0; 64]));
+    targets.add_signature(Signature::new(identity_id, vec![0; 64]));
     assert_matches!(
         root.verify_role(&targets),
         Err(Error::SignatureThreshold { valid: 0, .. })

@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- `KeyVal::public` is an `Option<String>` (breaking). Metadata that lists a
+  key without `keyval.public`, such as a Sigstore identity, can now be
+  decoded; such keys cannot verify signatures.
 - ECDSA public keys with a compressed point are no longer accepted.
 
 ## [0.1.0] - 2026-11-03

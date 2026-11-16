@@ -151,7 +151,11 @@ pub(crate) fn verify_signature_return_der(
             keytype: key.keytype.as_str().to_owned(),
             scheme: key.scheme.as_str().to_owned(),
         })?;
-    let (public_key, spki) = algorithm.public_key(&algorithm.decode_keyval(&key.keyval.public)?)?;
+    let encoded =
+        key.keyval.public.as_deref().ok_or_else(|| {
+            CryptoError::InvalidPublicKey("the key has no `keyval.public`".into())
+        })?;
+    let (public_key, spki) = algorithm.public_key(&algorithm.decode_keyval(encoded)?)?;
     if !public_key.verify(&algorithm.message(message), signature) {
         return Err(CryptoError::BadSignature);
     }

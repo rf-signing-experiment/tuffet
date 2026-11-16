@@ -154,7 +154,7 @@ fn private_keys_made_by_openssl_sign_and_verify() {
         let derived = signer.public_key();
         assert_eq!(derived.scheme, scheme);
         assert_eq!(
-            derived.keyval.public.trim(),
+            derived.keyval.public.as_deref().unwrap().trim(),
             data::crypto_text(public),
             "{scheme}"
         );

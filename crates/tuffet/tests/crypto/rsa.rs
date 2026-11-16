@@ -132,11 +132,9 @@ fn keys_of_2048_to_8192_bits_are_accepted() {
 /// key ("BEGIN RSA PUBLIC KEY").
 #[test]
 fn public_keys_must_be_subject_public_key_info() {
+    let pem = data::crypto_text("rsa.pub.pem");
     let mut pkcs1_label = key(SignatureScheme::RsassaPssSha256, "rsa.pub.pem");
-    pkcs1_label.keyval.public = pkcs1_label
-        .keyval
-        .public
-        .replace("PUBLIC KEY", "RSA PUBLIC KEY");
+    pkcs1_label.keyval.public = Some(pem.replace("PUBLIC KEY", "RSA PUBLIC KEY"));
     assert_matches!(
         verify_signature(&pkcs1_label, &message(), &data::crypto("rsa-pss-saltdigest.sig")),
         Err(CryptoError::InvalidPublicKey(reason)) if reason.contains("label")
