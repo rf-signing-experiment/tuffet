@@ -62,7 +62,8 @@ impl Default for UpdaterConfig {
 #[derive(Debug)]
 pub struct Updater<T, S, P: Pouf = Json> {
     workflow: Workflow<T, S>,
-    /// The latest trusted root, from which each refresh starts.
+    /// The latest trusted root, from which each refresh starts: the root in
+    /// local storage.
     root: Metadata<Root, P>,
     /// The trusted metadata, after a successful refresh.
     trusted: Option<TrustedMetadata<P>>,
@@ -102,9 +103,7 @@ impl<T: Transport, S: MetadataStore, P: Pouf> Updater<T, S, P> {
     pub async fn refresh_at(&mut self, reference_time: jiff::Timestamp) -> Result<()> {
         self.trusted = None;
         let mut trusted = TrustedMetadata::from_root(self.root.clone(), reference_time)?;
-        let result = self.workflow.refresh(&mut trusted).await;
-        self.root = trusted.root().clone();
-        result?;
+        self.workflow.refresh(&mut trusted, &mut self.root).await?;
         self.trusted = Some(trusted);
         Ok(())
     }

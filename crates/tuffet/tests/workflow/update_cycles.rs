@@ -244,3 +244,36 @@ fn local_storage_failures_are_reported() {
         Err(Error::Store { name, .. }) if name == "timestamp.json"
     );
 }
+
+/// A new root version is trusted once it is in local storage. If storing it
+/// fails, the next update starts from the old root and repeats the step,
+/// including what 5.3.11 requires: here, recovery from a fast-forward attack
+/// on snapshot metadata (see `update_root`).
+#[test]
+fn a_root_update_that_cannot_be_stored_is_repeated() {
+    let mut repo = TestRepo::new();
+    let store = Arc::new(FaultyStore::default());
+    let mut updater = Updater::builder(repo.transport.clone(), store.clone())
+        .initial_root(repo.initial_root())
+        .build()
+        .unwrap();
+    repo.snapshot.version = 999;
+    repo.publish_snapshot();
+    block_on(updater.refresh_at(now())).unwrap();
+
+    repo.snapshot.version = 1;
+    repo.rotate_key(RoleType::Snapshot);
+    repo.publish_root();
+    repo.publish_snapshot();
+    store.fail_removes.store(true, Ordering::SeqCst);
+    assert_matches!(
+        block_on(updater.refresh_at(now())),
+        Err(Error::Store { name, .. }) if name == "timestamp.json"
+    );
+    assert_eq!(updater.root().signed().version, 1);
+    assert_eq!(store.load("root.json").unwrap(), Some(repo.initial_root()));
+
+    store.fail_removes.store(false, Ordering::SeqCst);
+    block_on(updater.refresh_at(now())).unwrap();
+    assert_eq!(updater.root().signed().version, 2);
+}

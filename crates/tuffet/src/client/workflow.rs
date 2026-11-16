@@ -55,14 +55,23 @@ impl<T: Transport, S: MetadataStore> Workflow<T, S> {
             data = next;
         }
         if stored.as_ref() != Some(&data) {
-            self.persist(&root_name, &data)?;
+            // The root being replaced is only compared with the new one, so
+            // it does not need to be verified.
+            let replaced = stored.and_then(|stored| Metadata::from_bytes(&stored).ok());
+            self.persist_root(replaced.as_ref(), trusted.root(), &data)?;
         }
         Ok(trusted.root().clone())
     }
 
     /// Runs the workflow up to and including the top-level targets metadata.
-    pub(super) async fn refresh<P: Pouf>(&self, trusted: &mut TrustedMetadata<P>) -> Result<()> {
-        self.update_root(trusted).await?;
+    /// `stored_root` is the root in local storage, which `trusted` starts
+    /// from; it follows each new root version that is stored.
+    pub(super) async fn refresh<P: Pouf>(
+        &self,
+        trusted: &mut TrustedMetadata<P>,
+        stored_root: &mut Metadata<Root, P>,
+    ) -> Result<()> {
+        self.update_root(trusted, stored_root).await?;
         self.update_timestamp(trusted).await?;
         self.update_snapshot(trusted).await?;
         let (targets, root) = (RoleType::Targets.as_str(), RoleType::Root.as_str());
@@ -72,7 +81,11 @@ impl<T: Transport, S: MetadataStore> Workflow<T, S> {
 
     /// 5.3: downloads all newer versions of root metadata, and keeps each one
     /// for [`load_trusted_root`](Self::load_trusted_root).
-    async fn update_root<P: Pouf>(&self, trusted: &mut TrustedMetadata<P>) -> Result<()> {
+    async fn update_root<P: Pouf>(
+        &self,
+        trusted: &mut TrustedMetadata<P>,
+        stored_root: &mut Metadata<Root, P>,
+    ) -> Result<()> {
         let root_name = P::file_name(RoleType::Root.as_str());
         for _ in 0..self.config.max_root_rotations {
             let Some(next_version) = trusted.root().signed().version.checked_add(1) else {
@@ -86,23 +99,10 @@ impl<T: Transport, S: MetadataStore> Workflow<T, S> {
                 Err(Error::MetadataNotFound(_)) => return Ok(()),
                 result => result?,
             };
-            let old_roles = trusted.root().signed().roles.clone();
-            let roles = &trusted.update_root(&data)?.signed().roles;
-
-            // 5.3.11: after timestamp or snapshot keys are rotated, forget the
-            // cached metadata of those roles, so that versions inflated by an
-            // attacker who held the old keys cannot block future updates
-            // (recovery from a fast-forward attack). Do it before persisting
-            // the new root, from which the next update starts.
-            if roles.timestamp != old_roles.timestamp || roles.snapshot != old_roles.snapshot {
-                tracing::debug!(
-                    "timestamp or snapshot keys changed; removing their cached metadata"
-                );
-                self.remove(&P::file_name(RoleType::Timestamp.as_str()))?;
-                self.remove(&P::file_name(RoleType::Snapshot.as_str()))?;
-            }
+            let new_root = trusted.update_root(&data)?;
             self.persist(&name, &data)?;
-            self.persist(&root_name, &data)?;
+            self.persist_root(Some(stored_root), new_root, &data)?;
+            *stored_root = new_root.clone();
         }
         // Not an error: the next refresh continues from the last new root.
         tracing::debug!(
@@ -110,6 +110,29 @@ impl<T: Transport, S: MetadataStore> Workflow<T, S> {
             "stopped updating root after the maximum number of new versions"
         );
         Ok(())
+    }
+
+    /// Makes `data`, the verified root metadata `new`, the root in local
+    /// storage, from which the next update starts. `replaced` is the root in
+    /// local storage until now, if there is a usable one.
+    ///
+    /// 5.3.11: if `new` rotates the timestamp or snapshot keys, first forgets
+    /// the cached metadata of those roles, so that versions inflated by an
+    /// attacker who held the old keys cannot block future updates (recovery
+    /// from a fast-forward attack). If this fails, the root in local storage
+    /// is still `replaced`, so the next update does it again.
+    fn persist_root<P: Pouf>(
+        &self,
+        replaced: Option<&Metadata<Root, P>>,
+        new: &Metadata<Root, P>,
+        data: &[u8],
+    ) -> Result<()> {
+        if replaced.is_none_or(|replaced| rotates_online_keys(replaced.signed(), new.signed())) {
+            tracing::debug!("timestamp or snapshot keys changed; removing their cached metadata");
+            self.remove(&P::file_name(RoleType::Timestamp.as_str()))?;
+            self.remove(&P::file_name(RoleType::Snapshot.as_str()))?;
+        }
+        self.persist(&P::file_name(RoleType::Root.as_str()), data)
     }
 
     /// 5.4: timestamp metadata is always downloaded.
@@ -272,6 +295,19 @@ impl<T: Transport, S: MetadataStore> Workflow<T, S> {
             .remove(name)
             .map_err(|source| store_error(name, source))
     }
+}
+
+/// Whether the timestamp or snapshot role has other keys, or another
+/// threshold, in `new` than in `old`. Key IDs are only labels, so the keys
+/// they name are compared as well.
+fn rotates_online_keys(old: &Root, new: &Root) -> bool {
+    [RoleType::Timestamp, RoleType::Snapshot]
+        .into_iter()
+        .any(|role| {
+            let (old_role, new_role) = (old.roles.get(role), new.roles.get(role));
+            let key_differs = |keyid| old.keys.get(keyid) != new.keys.get(keyid);
+            old_role != new_role || old_role.keyids.iter().any(key_differs)
+        })
 }
 
 /// The name of a metadata file on the remote repository: with consistent

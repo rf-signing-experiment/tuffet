@@ -358,6 +358,32 @@ fn rotating_timestamp_or_snapshot_keys_deletes_their_trusted_metadata() {
     }
 }
 
+/// 5.3.11: key IDs are only labels (see `metadata::keys`), so a key is also
+/// rotated when another key takes its place under the same key ID.
+#[test]
+fn replacing_a_key_under_its_key_id_rotates_it() {
+    for role in [RoleType::Timestamp, RoleType::Snapshot] {
+        let mut repo = TestRepo::new();
+        let mut client = repo.client();
+        client.refresh().unwrap();
+
+        let keyid = repo.root.roles.get(role).keyids[0].clone();
+        let replacement = repo.new_key().public_key().clone();
+        repo.root.keys.insert(keyid, replacement);
+        repo.publish_root();
+        // End the update right after it has updated root.
+        repo.remove("timestamp.json");
+        assert_matches!(
+            client.refresh(),
+            Err(Error::MetadataNotFound(name)) if name == "timestamp.json"
+        );
+
+        assert_eq!(client.stored("root.json"), Some(repo.file("2.root.json")));
+        assert_eq!(client.stored("timestamp.json"), None, "{role}");
+        assert_eq!(client.stored("snapshot.json"), None, "{role}");
+    }
+}
+
 /// 5.3.11 also holds when the update fails after a rotation: the next update
 /// starts from the rotated root, and would not see the rotation again.
 #[test]
@@ -473,6 +499,28 @@ fn recovers_from_a_fast_forward_attack_on_snapshot() {
     repo.publish_snapshot();
     client.refresh().unwrap();
     assert_eq!(client.trusted().snapshot().unwrap().signed().version, 3);
+}
+
+/// 5.3.11 also holds for a root that the client does not download, because
+/// an update of the application ships it: the root with the rotated keys
+/// replaces the one in local storage all the same.
+#[test]
+fn recovers_from_a_fast_forward_attack_with_a_shipped_root() {
+    let mut repo = TestRepo::new();
+    let mut client = repo.client();
+    client.refresh().unwrap();
+
+    repo.snapshot.version = 999;
+    repo.publish_snapshot();
+    client.refresh().unwrap();
+
+    repo.snapshot.version = 1;
+    repo.rotate_key(RoleType::Snapshot);
+    repo.publish_root();
+    repo.publish_snapshot();
+    let mut updated = client.restart_with(repo.file("2.root.json"));
+    updated.refresh().unwrap();
+    assert_eq!(updated.trusted().snapshot().unwrap().signed().version, 2);
 }
 
 /// 5.3.11: recovery from a fast-forward attack on targets metadata, by an
