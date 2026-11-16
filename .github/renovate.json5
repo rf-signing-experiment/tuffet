@@ -1,19 +1,17 @@
-// Based on https://github.com/epage/_rust
 {
-  extends: ["helpers:pinGitHubActionDigests"],
+  extends: [
+    'helpers:pinGitHubActionDigests',
+  ],
   schedule: [
     'before 5am on the first day of the month',
   ],
-  minimumReleaseAge: "3 days",
-  internalChecksFilter: "strict",
+  minimumReleaseAge: '3 days',
+  internalChecksFilter: 'strict',
   commitMessageLowerCase: 'never',
   configMigration: true,
-  dependencyDashboard: true,
-  // Once a month, update every crate in Cargo.lock to its latest compatible
-  // version (`cargo update`) in one PR. Manifest requirements are left alone
-  // (see packageRules), so this is how patched releases of dependencies,
-  // direct and transitive, reach the lockfile. Not auto-merged, so a person
-  // reviews what changed in the dependency tree of a security library.
+  dependencyDashboard: {
+    enabled: true,
+  },
   lockFileMaintenance: {
     enabled: true,
     schedule: [
@@ -21,8 +19,6 @@
     ],
   },
   customManagers: [
-    // The Rust version CI pins: a line with `STABLE` and a version number,
-    // such as `RUST_TOOLCHAIN_STABLE: "1.99"  # STABLE` in ci.yml.
     {
       customType: 'regex',
       managerFilePatterns: [
@@ -46,7 +42,7 @@
       matchDepNames: [
         'STABLE',
       ],
-      extractVersion: '^(?<version>\\d+\\.\\d+)',  // Drop the patch version
+      extractVersion: '^(?<version>\\d+\\.\\d+)',
       schedule: [
         '* * * * *',
       ],
@@ -63,13 +59,6 @@
       automerge: true,
       groupName: 'compatible (actions)',
     },
-    // Goals:
-    // - Don't raise version requirements of the published crates for
-    //   compatible releases: that would force the update on users.
-    // - Take advantage of latest dev-dependencies
-    // - Rollup safe upgrades to reduce CI runner load
-    // - Help keep number of versions down by always using latest breaking change
-    // - Have lockfile and manifest in-sync
     {
       matchManagers: [
         'cargo',
