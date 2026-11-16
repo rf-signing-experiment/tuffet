@@ -47,57 +47,50 @@ impl fmt::Debug for Hasher {
     }
 }
 
-pub(super) fn verify(
-    algorithm: Algorithm,
-    public_key: &[u8],
-    message: &[u8],
-    signature: &[u8],
-) -> Result<(), CryptoError> {
-    parse_public_key(algorithm, public_key)?
-        .verify_sig(message, signature)
-        .map_err(|_| CryptoError::BadSignature)
-}
+/// A public key, parsed for the algorithm it is used with.
+pub(super) struct PublicKey(ParsedPublicKey);
 
-pub(super) fn check_public_key(algorithm: Algorithm, public_key: &[u8]) -> Result<(), CryptoError> {
-    parse_public_key(algorithm, public_key).map(drop)
-}
+impl PublicKey {
+    /// Decodes a raw Ed25519 key, or the DER-encoded `SubjectPublicKeyInfo`
+    /// of a key of another algorithm.
+    pub(super) fn decode(algorithm: Algorithm, public_key: &[u8]) -> Result<Self, CryptoError> {
+        let verification: &'static dyn VerificationAlgorithm = match algorithm {
+            Algorithm::Ed25519 => &signature::ED25519,
+            Algorithm::EcdsaP256Sha256 => &signature::ECDSA_P256_SHA256_ASN1,
+            Algorithm::EcdsaP384Sha384 => &signature::ECDSA_P384_SHA384_ASN1,
+            // aws-lc-rs only verifies PSS signatures with a digest-length salt.
+            Algorithm::RsaPss(RsaPssHash::Sha256) => &signature::RSA_PSS_2048_8192_SHA256,
+            Algorithm::RsaPss(RsaPssHash::Sha384) => &signature::RSA_PSS_2048_8192_SHA384,
+            Algorithm::RsaPss(RsaPssHash::Sha512) => &signature::RSA_PSS_2048_8192_SHA512,
+            // Pure ML-DSA with an empty context.
+            Algorithm::MlDsa(MlDsaParameterSet::MlDsa44) => &signature::ML_DSA_44,
+            Algorithm::MlDsa(MlDsaParameterSet::MlDsa65) => &signature::ML_DSA_65,
+            Algorithm::MlDsa(MlDsaParameterSet::MlDsa87) => &signature::ML_DSA_87,
+        };
+        ParsedPublicKey::new(verification, public_key)
+            .map(PublicKey)
+            .map_err(invalid_public_key)
+    }
 
-pub(super) fn public_key_spki(
-    algorithm: Algorithm,
-    public_key: &[u8],
-) -> Result<Vec<u8>, CryptoError> {
-    let der = parse_public_key(algorithm, public_key)?
-        .as_der()
-        .map_err(invalid_public_key)?;
-    Ok(der.as_ref().to_vec())
-}
+    /// The key's DER-encoded `SubjectPublicKeyInfo`.
+    pub(super) fn spki(&self) -> Result<Vec<u8>, CryptoError> {
+        let der = self.0.as_der().map_err(invalid_public_key)?;
+        Ok(der.as_ref().to_vec())
+    }
 
-fn parse_public_key(
-    algorithm: Algorithm,
-    public_key: &[u8],
-) -> Result<ParsedPublicKey, CryptoError> {
-    let verification: &'static dyn VerificationAlgorithm = match algorithm {
-        Algorithm::Ed25519 => &signature::ED25519,
-        Algorithm::EcdsaP256Sha256 => &signature::ECDSA_P256_SHA256_ASN1,
-        Algorithm::EcdsaP384Sha384 => &signature::ECDSA_P384_SHA384_ASN1,
-        // aws-lc-rs only verifies PSS signatures with a digest-length salt.
-        Algorithm::RsaPss(RsaPssHash::Sha256) => &signature::RSA_PSS_2048_8192_SHA256,
-        Algorithm::RsaPss(RsaPssHash::Sha384) => &signature::RSA_PSS_2048_8192_SHA384,
-        Algorithm::RsaPss(RsaPssHash::Sha512) => &signature::RSA_PSS_2048_8192_SHA512,
-        // Pure ML-DSA with an empty context.
-        Algorithm::MlDsa(MlDsaParameterSet::MlDsa44) => &signature::ML_DSA_44,
-        Algorithm::MlDsa(MlDsaParameterSet::MlDsa65) => &signature::ML_DSA_65,
-        Algorithm::MlDsa(MlDsaParameterSet::MlDsa87) => &signature::ML_DSA_87,
-    };
-    ParsedPublicKey::new(verification, public_key).map_err(invalid_public_key)
-}
+    /// The size of an RSA key. `ParsedPublicKey` does not tell, so this parses
+    /// the bytes the key was decoded from again.
+    pub(super) fn rsa_modulus_bits(&self) -> Result<usize, CryptoError> {
+        let key = rsa::PublicKey::from_der(self.0.as_ref()).map_err(invalid_public_key)?;
+        let modulus = key.modulus();
+        let modulus = modulus.big_endian_without_leading_zero();
+        let leading_zero_bits = modulus.first().map_or(0, |first| first.leading_zeros());
+        Ok(modulus.len() * 8 - leading_zero_bits as usize)
+    }
 
-pub(super) fn rsa_modulus_bits(public_key: &[u8]) -> Result<usize, CryptoError> {
-    let key = rsa::PublicKey::from_der(public_key).map_err(invalid_public_key)?;
-    let modulus = key.modulus();
-    let modulus = modulus.big_endian_without_leading_zero();
-    let leading_zero_bits = modulus.first().map_or(0, |first| first.leading_zeros());
-    Ok(modulus.len() * 8 - leading_zero_bits as usize)
+    pub(super) fn verify(&self, message: &[u8], signature: &[u8]) -> bool {
+        self.0.verify_sig(message, signature).is_ok()
+    }
 }
 
 pub(super) enum SigningKey {

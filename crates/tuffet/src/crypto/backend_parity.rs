@@ -2,7 +2,7 @@
 //! The other tests of this module, which use its public API, are in
 //! `tests/crypto`.
 
-use super::{HashAlgorithm, aws_lc, decode_pem, rustcrypto};
+use super::{Algorithm, HashAlgorithm, aws_lc, decode_pem, rustcrypto};
 
 /// Keys and signatures generated with OpenSSL; see `tests/data/README.md`.
 macro_rules! vector {
@@ -41,10 +41,16 @@ fn backends_derive_the_same_keys_and_verify_each_others_signatures() {
         let public = rustcrypto.public_key().unwrap();
         assert_eq!(aws_lc.public_key().unwrap(), public, "{algorithm:?}");
 
-        let signature = rustcrypto.sign(MESSAGE).unwrap();
-        aws_lc::verify(algorithm, &public, MESSAGE, &signature).unwrap();
-        let signature = aws_lc.sign(MESSAGE).unwrap();
-        rustcrypto::verify(algorithm, &public, MESSAGE, &signature).unwrap();
+        let aws_lc_public = aws_lc::PublicKey::decode(algorithm, &public).unwrap();
+        let rustcrypto_public = rustcrypto::PublicKey::decode(algorithm, &public).unwrap();
+        let spki = rustcrypto_public.spki().unwrap();
+        assert_eq!(aws_lc_public.spki().unwrap(), spki, "{algorithm:?}");
+        if algorithm != Algorithm::Ed25519 {
+            assert_eq!(spki, public, "{algorithm:?}");
+        }
+
+        assert!(aws_lc_public.verify(MESSAGE, &rustcrypto.sign(MESSAGE).unwrap()));
+        assert!(rustcrypto_public.verify(MESSAGE, &aws_lc.sign(MESSAGE).unwrap()));
     }
 }
 

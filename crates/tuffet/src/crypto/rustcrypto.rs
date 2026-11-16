@@ -57,46 +57,8 @@ impl Hasher {
     }
 }
 
-pub(super) fn verify(
-    algorithm: Algorithm,
-    public_key: &[u8],
-    message: &[u8],
-    signature: &[u8],
-) -> Result<(), CryptoError> {
-    if VerifyingKey::decode(algorithm, public_key)?.verify(message, signature) {
-        Ok(())
-    } else {
-        Err(CryptoError::BadSignature)
-    }
-}
-
-pub(super) fn check_public_key(algorithm: Algorithm, public_key: &[u8]) -> Result<(), CryptoError> {
-    VerifyingKey::decode(algorithm, public_key).map(drop)
-}
-
-pub(super) fn public_key_spki(
-    algorithm: Algorithm,
-    public_key: &[u8],
-) -> Result<Vec<u8>, CryptoError> {
-    let der = match VerifyingKey::decode(algorithm, public_key)? {
-        VerifyingKey::Ed25519(key) => key.to_public_key_der(),
-        VerifyingKey::P256(key) => key.to_public_key_der(),
-        VerifyingKey::P384(key) => key.to_public_key_der(),
-        VerifyingKey::RsaPss(_, key) => key.to_public_key_der(),
-        VerifyingKey::MlDsa44(key) => key.to_public_key_der(),
-        VerifyingKey::MlDsa65(key) => key.to_public_key_der(),
-        VerifyingKey::MlDsa87(key) => key.to_public_key_der(),
-    };
-    Ok(der.map_err(invalid_public_key)?.into_vec())
-}
-
-pub(super) fn rsa_modulus_bits(public_key: &[u8]) -> Result<usize, CryptoError> {
-    let key: RsaPublicKey = from_spki(public_key)?;
-    Ok(key.n().bits() as usize)
-}
-
 /// A public key, decoded for the algorithm it is used with.
-enum VerifyingKey {
+pub(super) enum PublicKey {
     Ed25519(ed25519::VerifyingKey),
     P256(p256::ecdsa::VerifyingKey),
     P384(p384::ecdsa::VerifyingKey),
@@ -106,8 +68,10 @@ enum VerifyingKey {
     MlDsa87(ml_dsa::VerifyingKey<MlDsa87>),
 }
 
-impl VerifyingKey {
-    fn decode(algorithm: Algorithm, public_key: &[u8]) -> Result<Self, CryptoError> {
+impl PublicKey {
+    /// Decodes a raw Ed25519 key, or the DER-encoded `SubjectPublicKeyInfo`
+    /// of a key of another algorithm.
+    pub(super) fn decode(algorithm: Algorithm, public_key: &[u8]) -> Result<Self, CryptoError> {
         Ok(match algorithm {
             Algorithm::Ed25519 => {
                 let bytes = public_key.try_into().map_err(invalid_public_key)?;
@@ -122,7 +86,29 @@ impl VerifyingKey {
         })
     }
 
-    fn verify(self, message: &[u8], signature: &[u8]) -> bool {
+    /// The key's DER-encoded `SubjectPublicKeyInfo`.
+    pub(super) fn spki(&self) -> Result<Vec<u8>, CryptoError> {
+        let der = match self {
+            Self::Ed25519(key) => key.to_public_key_der(),
+            Self::P256(key) => key.to_public_key_der(),
+            Self::P384(key) => key.to_public_key_der(),
+            Self::RsaPss(_, key) => key.to_public_key_der(),
+            Self::MlDsa44(key) => key.to_public_key_der(),
+            Self::MlDsa65(key) => key.to_public_key_der(),
+            Self::MlDsa87(key) => key.to_public_key_der(),
+        };
+        Ok(der.map_err(invalid_public_key)?.into_vec())
+    }
+
+    /// The size of an RSA key.
+    pub(super) fn rsa_modulus_bits(&self) -> Result<usize, CryptoError> {
+        match self {
+            Self::RsaPss(_, key) => Ok(key.n().bits() as usize),
+            _ => Err(invalid_public_key("not an RSA key")),
+        }
+    }
+
+    pub(super) fn verify(&self, message: &[u8], signature: &[u8]) -> bool {
         match self {
             Self::Ed25519(key) => ed25519::Signature::from_slice(signature)
                 .is_ok_and(|signature| key.verify_strict(message, &signature).is_ok()),
@@ -135,6 +121,7 @@ impl VerifyingKey {
                 let Ok(signature) = Signature::try_from(signature) else {
                     return false;
                 };
+                let key = key.clone();
                 // Signers disagree on the PSS salt length (python-tuf and go-tuf
                 // use the digest length, OpenSSL defaults to the maximum), so
                 // detect it.
@@ -148,9 +135,9 @@ impl VerifyingKey {
                 }
                 .is_ok()
             }
-            Self::MlDsa44(key) => verify_ml_dsa(&key, message, signature),
-            Self::MlDsa65(key) => verify_ml_dsa(&key, message, signature),
-            Self::MlDsa87(key) => verify_ml_dsa(&key, message, signature),
+            Self::MlDsa44(key) => verify_ml_dsa(key, message, signature),
+            Self::MlDsa65(key) => verify_ml_dsa(key, message, signature),
+            Self::MlDsa87(key) => verify_ml_dsa(key, message, signature),
         }
     }
 }

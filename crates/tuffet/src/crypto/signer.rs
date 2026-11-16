@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use super::{Algorithm, CryptoError, backend, check_rsa_key_size, decode_pem, unsupported_scheme};
+use super::{Algorithm, CryptoError, backend, decode_pem, unsupported_scheme};
 use crate::metadata::{Key, SignatureScheme};
 
 /// Something that can sign metadata.
@@ -52,10 +52,10 @@ impl PrivateKey {
     fn from_backend(inner: backend::SigningKey) -> Result<Self, CryptoError> {
         let algorithm = inner.algorithm();
         let public_key = inner.public_key()?;
-        if let Algorithm::RsaPss(_) = algorithm {
-            check_rsa_key_size(backend::rsa_modulus_bits(&public_key)?)
-                .map_err(CryptoError::InvalidPrivateKey)?;
-        }
+        // A key is only of use if its signatures verify.
+        algorithm
+            .public_key(&public_key)
+            .map_err(|error| CryptoError::InvalidPrivateKey(error.to_string()))?;
         let public = algorithm.key(&public_key);
         Ok(PrivateKey { inner, public })
     }

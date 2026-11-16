@@ -132,7 +132,8 @@ pub fn verify_signature(key: &Key, message: &[u8], signature: &[u8]) -> Result<(
 }
 
 /// Verifies `signature` over `message` with a public key from metadata.
-/// Returns the canonical DER encoded public key.
+/// Returns the key's DER-encoded `SubjectPublicKeyInfo`, which identifies the
+/// key however `keyval.public` spells it.
 pub(crate) fn verify_signature_return_der(
     key: &Key,
     message: &[u8],
@@ -144,14 +145,11 @@ pub(crate) fn verify_signature_return_der(
             keytype: key.keytype.as_str().to_owned(),
             scheme: key.scheme.as_str().to_owned(),
         })?;
-    let public_key = algorithm.decode_public_key(&key.keyval.public)?;
-    backend::verify(
-        algorithm,
-        &public_key,
-        &algorithm.message(message),
-        signature,
-    )?;
-    backend::public_key_spki(algorithm, &public_key)
+    let (public_key, spki) = algorithm.public_key(&algorithm.decode_keyval(&key.keyval.public)?)?;
+    if !public_key.verify(&algorithm.message(message), signature) {
+        return Err(CryptoError::BadSignature);
+    }
+    Ok(spki)
 }
 
 /// The message that an ML-DSA key signs for a metadata payload (its
@@ -174,9 +172,10 @@ pub fn ml_dsa_message(payload: &[u8]) -> Vec<u8> {
 ///
 /// Use this for keys held outside the process, such as in an HSM, a cloud
 /// KMS or a hardware token: to implement [`Signer::public_key`] for them, or
-/// to list them in metadata. The key is checked to be valid for `scheme`
-/// (RSA keys must have 2048 to 8192 bits), and is encoded the way
-/// [`PrivateKey`] encodes keys, so that a key always gets the same key ID.
+/// to list them in metadata. The key is checked to be one that signature
+/// verification accepts for `scheme` (see [`verify_signature`]), and is
+/// encoded the way [`PrivateKey`] encodes keys, so that a key always gets the
+/// same key ID.
 pub fn public_key_from_spki(scheme: &SignatureScheme, der: &[u8]) -> Result<Key, CryptoError> {
     let algorithm = Algorithm::from_scheme(scheme).ok_or_else(|| unsupported_scheme(scheme))?;
     let public_key = match algorithm {
@@ -189,11 +188,7 @@ pub fn public_key_from_spki(scheme: &SignatureScheme, der: &[u8]) -> Result<Key,
             })?,
         _ => der,
     };
-    backend::check_public_key(algorithm, public_key)?;
-    if let Algorithm::RsaPss(_) = algorithm {
-        check_rsa_key_size(backend::rsa_modulus_bits(public_key)?)
-            .map_err(CryptoError::InvalidPublicKey)?;
-    }
+    algorithm.public_key(public_key)?;
     Ok(algorithm.key(public_key))
 }
 
@@ -292,8 +287,9 @@ impl Algorithm {
         }
     }
 
-    /// Decodes a `keyval.public` string into the form backends take.
-    fn decode_public_key(self, encoded: &str) -> Result<Vec<u8>, CryptoError> {
+    /// Decodes a `keyval.public` string into the form backends take: the raw
+    /// key for Ed25519, DER for the others.
+    fn decode_keyval(self, encoded: &str) -> Result<Vec<u8>, CryptoError> {
         if self == Algorithm::Ed25519 {
             return hex::decode(encoded)
                 .ok()
@@ -304,12 +300,26 @@ impl Algorithm {
                     )
                 });
         }
-        let key = decode_pem(encoded, "PUBLIC KEY").map_err(CryptoError::InvalidPublicKey)?;
+        decode_pem(encoded, "PUBLIC KEY").map_err(CryptoError::InvalidPublicKey)
+    }
+
+    /// Parses a public key in the form backends take, and applies the rules
+    /// that hold whatever the backend. Returns the key and its DER-encoded
+    /// `SubjectPublicKeyInfo`.
+    fn public_key(self, encoded: &[u8]) -> Result<(backend::PublicKey, Vec<u8>), CryptoError> {
+        let key = backend::PublicKey::decode(self, encoded)?;
+        let spki = key.spki()?;
         if let Algorithm::RsaPss(_) = self {
-            check_rsa_key_size(backend::rsa_modulus_bits(&key)?)
-                .map_err(CryptoError::InvalidPublicKey)?;
+            let bits = key.rsa_modulus_bits()?;
+            if !RSA_KEY_BITS.contains(&bits) {
+                return Err(CryptoError::InvalidPublicKey(format!(
+                    "RSA keys must have {} to {} bits, got {bits}",
+                    RSA_KEY_BITS.start(),
+                    RSA_KEY_BITS.end()
+                )));
+            }
         }
-        Ok(key)
+        Ok((key, spki))
     }
 
     /// Describes a public key, in the form backends take, the way metadata
@@ -338,17 +348,6 @@ fn decode_pem(pem: &str, expected_label: &str) -> Result<Vec<u8>, String> {
         ));
     }
     Ok(der)
-}
-
-fn check_rsa_key_size(bits: usize) -> Result<(), String> {
-    if !RSA_KEY_BITS.contains(&bits) {
-        return Err(format!(
-            "RSA keys must have {} to {} bits, got {bits}",
-            RSA_KEY_BITS.start(),
-            RSA_KEY_BITS.end()
-        ));
-    }
-    Ok(())
 }
 
 // The tests of this module are in `tests/crypto`. This one compares the
