@@ -54,7 +54,9 @@ files. It is also the API for creating metadata (see
   sizes, the message ML-DSA signs). Supported signature schemes, as `keytype`
   and `scheme` in metadata:
 
-  - Ed25519: `ed25519` with `ed25519`. Public keys are hex.
+  - Ed25519: `ed25519` with `ed25519`. Public keys are hex. The `rustcrypto`
+    backend rejects public keys and signature points of small order, which
+    the `aws-lc-rs` backend accepts.
   - ECDSA: `ecdsa` with `ecdsa-sha2-nistp256`, or `ecdsa-sha2-nistp384`.
     Signatures are DER.
   - RSA: `rsa` with `rsassa-pss-sha256`, or `rsassa-pss-sha384` or
@@ -64,7 +66,8 @@ files. It is also the API for creating metadata (see
     `ml-dsa` with `ml-dsa-44/1`, `ml-dsa-65/1` or `ml-dsa-87/1`. The
     `rustcrypto` backend only loads private keys that include the seed.
 
-  Public keys other than Ed25519 ones are PEM-encoded `SubjectPublicKeyInfo`.
+  Public keys other than Ed25519 ones are PEM-encoded `SubjectPublicKeyInfo`
+  in DER, so ECDSA points are uncompressed.
   The supported file hashes are `sha256` and `sha512`. AWS-LC and RustCrypto
   backends are both supported, controlled by [features](#features).
 - **I/O** is defined by two traits: `transport::Transport` (async; returns

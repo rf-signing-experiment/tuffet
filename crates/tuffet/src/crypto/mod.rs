@@ -6,10 +6,15 @@
 //! strings encode keys (hex for Ed25519, PEM for the others), the allowed RSA
 //! key sizes, and the message ML-DSA signs ([TAP 21]).
 //!
-//! The backends behave identically, except that the `aws-lc-rs` backend only
-//! verifies RSA-PSS signatures whose salt is as long as the digest.
-//! The `rustcrypto` backend only loads ML-DSA private keys that include
-//! the seed; `aws-lc-rs` also loads the expanded form alone.
+//! The backends behave identically, with three exceptions:
+//!
+//! - The `aws-lc-rs` backend only verifies RSA-PSS signatures whose salt is
+//!   as long as the digest.
+//! - The `rustcrypto` backend only loads ML-DSA private keys that include
+//!   the seed; `aws-lc-rs` also loads the expanded form alone.
+//! - The `rustcrypto` backend verifies Ed25519 signatures strictly: it
+//!   rejects public keys and signature points of small order, which
+//!   `aws-lc-rs` accepts. Honest signers produce neither.
 //!
 //! [TAP 21]: https://github.com/theupdateframework/taps/blob/master/tap21.md
 
@@ -124,8 +129,9 @@ impl Hasher {
 ///
 /// The key's `keytype` must match its `scheme`.
 ///
-/// Public keys other than Ed25519 ones are PEM-encoded `SubjectPublicKeyInfo`,
-/// RSA keys must have 2048 to 8192 bits, and ECDSA signatures are DER-encoded.
+/// Public keys other than Ed25519 ones are PEM-encoded `SubjectPublicKeyInfo`
+/// in DER (so elliptic curve points are uncompressed), RSA keys must have
+/// 2048 to 8192 bits, and ECDSA signatures are DER-encoded.
 pub fn verify_signature(key: &Key, message: &[u8], signature: &[u8]) -> Result<(), CryptoError> {
     verify_signature_return_der(key, message, signature)?;
     Ok(())
@@ -309,6 +315,12 @@ impl Algorithm {
     fn public_key(self, encoded: &[u8]) -> Result<(backend::PublicKey, Vec<u8>), CryptoError> {
         let key = backend::PublicKey::decode(self, encoded)?;
         let spki = key.spki()?;
+        // Require that the encoded data is exactly the DER SPKI data.
+        if self != Algorithm::Ed25519 && spki != encoded {
+            return Err(CryptoError::InvalidPublicKey(
+                "not a DER-encoded SubjectPublicKeyInfo".into(),
+            ));
+        }
         if let Algorithm::RsaPss(_) = self {
             let bits = key.rsa_modulus_bits()?;
             if !RSA_KEY_BITS.contains(&bits) {

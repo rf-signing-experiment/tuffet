@@ -12,6 +12,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Ensure signature thresholds count each key only once based on key material.
   Before, a key that a role listed twice, with `keyval.public` encoded in two
   different ways (hex casing, PEM whitespace or line endings, etc), counted twice.
+- The cryptography backends accept the same public keys: only the DER
+  `SubjectPublicKeyInfo` of a key. Before, `aws-lc-rs` also took PKCS#1 RSA
+  keys, bare elliptic curve points and keys followed by other data, which
+  `rustcrypto` rejected.
+
+### Changed
+
+- ECDSA public keys with a compressed point are no longer accepted.
 
 ## [0.1.0] - 2026-11-03
 

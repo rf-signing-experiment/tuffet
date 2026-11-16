@@ -153,22 +153,12 @@ fn a_key_counts_once_however_its_public_key_is_encoded() {
         private("ml-dsa-44.key.pem"),
     );
     let public = |signer: &PrivateKey| signer.public_key().keyval.public.clone();
-    #[allow(unused_mut)]
-    let mut variants = vec![
+    let variants = [
         (&*ed25519, public(&ed25519).to_uppercase()),
         (&p256, public(&p256).replace('\n', "\r\n")),
-        (&p256, data::crypto_text("p256.compressed.pub.pem")),
         (&rsa, format!(" {}\n", public(&rsa))),
         (&ml_dsa, public(&ml_dsa).trim_end().to_owned()),
     ];
-    // `aws-lc-rs` also takes the bare point, without its SubjectPublicKeyInfo.
-    #[cfg(feature = "aws-lc-rs")]
-    {
-        let (_, spki) = pem_rfc7468::decode_vec(public(&p256).as_bytes()).unwrap();
-        let point = &spki[spki.len() - 65..];
-        let bare = pem_rfc7468::encode_string("PUBLIC KEY", pem_rfc7468::LineEnding::LF, point);
-        variants.push((&p256, bare.unwrap()));
-    }
     for (signer, encoded) in variants {
         let key = signer.public_key().clone();
         assert_ne!(encoded, key.keyval.public);
