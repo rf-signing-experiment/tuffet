@@ -23,7 +23,7 @@ env:
   CARGO_BUILD_WARNINGS: deny
   # A new Rust release can bring new warnings and lints, so CI uses a fixed
   # version. Renovate updates it (see .github/renovate.json5).
-  RUST_TOOLCHAIN_STABLE: "1.99"  # STABLE
+  RUST_TOOLCHAIN_STABLE: "1.100"  # STABLE
 
 defaults:
   run:
