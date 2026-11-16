@@ -74,7 +74,8 @@ fn new_root_versions_stay_trusted_when_a_later_step_fails() {
 }
 
 /// `Updater::get_target_info` first updates if the last update failed, or if
-/// there was none.
+/// there was none. (It also does once trusted metadata has expired; see
+/// `update_start_time`.)
 #[test]
 fn looking_up_a_target_updates_first_if_needed() {
     let mut repo = TestRepo::new();

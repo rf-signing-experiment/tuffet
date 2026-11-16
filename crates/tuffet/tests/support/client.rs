@@ -76,9 +76,10 @@ impl Client {
         block_on(self.updater.refresh_at(self.time))
     }
 
-    /// Looks up a target, searching delegations (5.6.7).
+    /// Looks up a target, searching delegations (5.6.7), at
+    /// [`time`](Self::time).
     pub fn get_target_info(&mut self, path: &str) -> tuffet::Result<Option<TargetInfo>> {
-        block_on(self.updater.get_target_info(path))
+        block_on(self.updater.get_target_info_at(path, self.time))
     }
 
     /// The role that lists the target at `path`, if any.

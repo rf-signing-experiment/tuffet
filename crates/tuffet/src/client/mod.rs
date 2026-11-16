@@ -109,13 +109,28 @@ impl<T: Transport, S: MetadataStore, P: Pouf> Updater<T, S, P> {
     }
 
     /// Looks up a target by path, searching delegated roles as needed.
-    /// Refreshes first if there is no trusted metadata.
+    ///
+    /// Refreshes first if there is no trusted metadata, or if some of it has
+    /// expired since the last refresh, so an updater that is kept for a long
+    /// time does not go on trusting metadata that is no longer valid.
     ///
     /// Returns `None` if no trusted role lists the target.
-    #[tracing::instrument(skip(self))]
     pub async fn get_target_info(&mut self, path: &str) -> Result<Option<TargetInfo>> {
-        if self.trusted.is_none() {
-            self.refresh().await?;
+        self.get_target_info_at(path, jiff::Timestamp::now()).await
+    }
+
+    /// Like [`get_target_info`](Self::get_target_info), with `time` as the
+    /// current time: trusted metadata that has expired at `time` is refreshed
+    /// with `time` as the update start time.
+    #[tracing::instrument(name = "get_target_info", skip(self, time))]
+    pub async fn get_target_info_at(
+        &mut self,
+        path: &str,
+        time: jiff::Timestamp,
+    ) -> Result<Option<TargetInfo>> {
+        let stale = |trusted: &TrustedMetadata<P>| trusted.is_expired(time);
+        if self.trusted.as_ref().is_none_or(stale) {
+            self.refresh_at(time).await?;
         }
         let trusted = self.trusted.as_mut().expect("refreshed");
         let mut search = TargetSearch::new(path, self.workflow.config.max_delegations);

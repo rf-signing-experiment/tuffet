@@ -20,6 +20,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `SubjectPublicKeyInfo` of a key. Before, `aws-lc-rs` also took PKCS#1 RSA
   keys, bare elliptic curve points and keys followed by other data, which
   `rustcrypto` rejected.
+- `Updater::get_target_info` refreshes first when trusted metadata has
+  expired since the last refresh, so a long-lived `Updater` no longer keeps
+  using it.
+
+### Added
+
+- `Updater::get_target_info_at` and `TrustedMetadata::is_expired`.
 
 ### Changed
 

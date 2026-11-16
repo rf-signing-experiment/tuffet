@@ -100,8 +100,9 @@ fn updates_from_the_repository_of_the_reference_implementation() {
         .build()
         .unwrap();
 
-    block_on(updater.refresh_at("2025-01-01T00:00:00Z".parse().unwrap())).unwrap();
-    let file1 = block_on(updater.get_target_info("file1.txt"))
+    let time = "2025-01-01T00:00:00Z".parse().unwrap();
+    block_on(updater.refresh_at(time)).unwrap();
+    let file1 = block_on(updater.get_target_info_at("file1.txt", time))
         .unwrap()
         .unwrap();
     assert_eq!(
@@ -110,7 +111,7 @@ fn updates_from_the_repository_of_the_reference_implementation() {
     );
 
     // file3.txt is listed by the delegated role "role1".
-    let file3 = block_on(updater.get_target_info("file3.txt"))
+    let file3 = block_on(updater.get_target_info_at("file3.txt", time))
         .unwrap()
         .unwrap();
     assert_eq!(file3.role, "role1");

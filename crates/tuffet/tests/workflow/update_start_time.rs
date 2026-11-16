@@ -10,7 +10,7 @@ use jiff::SignedDuration;
 use tuffet::Error;
 use tuffet::metadata::RoleType;
 
-use crate::support::{TestRepo, now};
+use crate::support::{TestRepo, far_future, now};
 
 /// Publishes metadata of a top-level role that expires at `expires`.
 fn publish_expiring(repo: &mut TestRepo, role: RoleType, expires: jiff::Timestamp) {
@@ -77,4 +77,50 @@ fn metadata_that_expires_at_the_update_start_time_has_expired() {
         client.time = now() - SignedDuration::from_secs(1);
         client.refresh().unwrap();
     }
+}
+
+/// An update is over once its metadata is trusted, but the metadata does not
+/// stay valid: it has expired when any of it has.
+#[test]
+fn trusted_metadata_expires_when_any_of_it_does() {
+    for role in RoleType::TOP_LEVEL_ROLES {
+        let mut repo = TestRepo::new();
+        publish_expiring(&mut repo, role, now() + SignedDuration::from_hours(1));
+        let trusted = repo.trusted_with_targets();
+        assert!(!trusted.is_expired(now() + SignedDuration::from_mins(59)));
+        assert!(trusted.is_expired(now() + SignedDuration::from_hours(1)));
+    }
+}
+
+/// An `Updater` that is kept after an update starts a new one when a target
+/// is looked up after trusted metadata has expired (`get_target_info` uses
+/// the current time), and fails if the repository has nothing newer.
+#[test]
+fn looking_up_a_target_updates_first_once_trusted_metadata_has_expired() {
+    let mut repo = TestRepo::new();
+    repo.add_target("targets", "file", b"data");
+    repo.commit();
+    publish_expiring(
+        &mut repo,
+        RoleType::Timestamp,
+        now() + SignedDuration::from_hours(1),
+    );
+    let mut client = repo.client();
+    client.refresh().unwrap();
+    repo.requests();
+
+    client.time = now() + SignedDuration::from_mins(59);
+    assert!(client.get_target_info("file").unwrap().is_some());
+    assert!(repo.requests().is_empty());
+
+    client.time = now() + SignedDuration::from_mins(61);
+    assert_matches!(
+        client.get_target_info("file"),
+        Err(Error::Expired { role, .. }) if role == "timestamp"
+    );
+    assert!(client.updater.trusted().is_none());
+
+    publish_expiring(&mut repo, RoleType::Timestamp, far_future());
+    assert!(client.get_target_info("file").unwrap().is_some());
+    assert_eq!(client.trusted().reference_time(), client.time);
 }

@@ -135,6 +135,21 @@ impl<P: Pouf> TrustedMetadata<P> {
         Ok(Some(metadata))
     }
 
+    /// Whether any of the trusted metadata has expired at `time`. The checks
+    /// of an update all use its [`reference_time`](Self::reference_time), so
+    /// a client that keeps using this metadata afterwards should start a new
+    /// update once this is true.
+    pub fn is_expired(&self, time: jiff::Timestamp) -> bool {
+        let (timestamp, snapshot) = (self.timestamp.as_ref(), self.snapshot.as_ref());
+        self.root.signed().is_expired(time)
+            || timestamp.is_some_and(|metadata| metadata.signed().is_expired(time))
+            || snapshot.is_some_and(|metadata| metadata.signed().is_expired(time))
+            || self
+                .targets
+                .values()
+                .any(|metadata| metadata.signed().is_expired(time))
+    }
+
     /// What the trusted timestamp metadata says about the snapshot metadata:
     /// the version to download next and, possibly, its length and hashes.
     pub fn snapshot_meta(&self) -> Option<&MetaFile> {
