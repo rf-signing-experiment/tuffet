@@ -100,7 +100,17 @@ impl<T: Role, P: Pouf> Metadata<T, P> {
     }
 
     /// Encodes the metadata for storage or publication.
+    ///
+    /// Fails for decoded metadata whose payload this implementation would
+    /// not write as it was received (with `null` for an absent field, for
+    /// example), because the signatures would not cover the result. Keep the
+    /// bytes that were decoded instead.
     pub fn to_bytes(&self) -> Result<Vec<u8>> {
+        if P::canonicalize(&self.signed)? != self.canonical_signed {
+            return Err(Error::Encode(
+                "the payload would not be encoded as it was signed".into(),
+            ));
+        }
         P::encode(&self.signed, &self.signatures, &self.unrecognized_fields)
     }
 

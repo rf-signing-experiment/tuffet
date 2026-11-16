@@ -23,6 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   key without `keyval.public`, such as a Sigstore identity, can now be
   decoded; such keys cannot verify signatures.
 - ECDSA public keys with a compressed point are no longer accepted.
+- `Metadata::to_bytes` fails for decoded metadata whose payload would not be
+  written as it was signed (an uppercase digest, or `null` for an absent
+  field), instead of writing metadata with invalid signatures.
 
 ## [0.1.0] - 2026-11-03
 

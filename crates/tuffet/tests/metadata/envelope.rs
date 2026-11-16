@@ -6,9 +6,11 @@ use std::assert_matches;
 
 use serde_json::{Value, json};
 use tuffet::Error;
-use tuffet::metadata::{MetaFile, Metadata, Root, Targets, Timestamp};
+use tuffet::crypto::{HashAlgorithm, Signer};
+use tuffet::metadata::{MetaFile, Metadata, RoleType, Root, TargetFile, Targets, Timestamp};
+use tuffet::pouf::{Json, Pouf};
 
-use crate::support::keys::key;
+use crate::support::keys::{key, key_id};
 use crate::support::{data, far_future};
 use crate::{decode, python_tuf_document};
 
@@ -144,6 +146,61 @@ fn a_changed_payload_is_wrapped_again_without_its_signatures() {
     assert!(changed.signatures().is_empty());
     assert_eq!(changed.signed().version, 2);
     assert_ne!(changed.canonical_signed(), received);
+}
+
+/// Signatures cover the payload as it was received, which tuffet does not
+/// always write the same way: it writes digests in lowercase, and leaves out
+/// absent fields. Encoding such metadata again would silently invalidate its
+/// signatures, so it fails instead.
+#[test]
+fn metadata_is_only_encoded_again_as_it_was_signed() {
+    let signer = key("signer");
+    let mut root = Root::new(far_future());
+    let keyid = key_id(&signer);
+    root.add_key(
+        RoleType::Targets,
+        keyid.clone(),
+        signer.public_key().clone(),
+    );
+
+    let mut targets = Targets::new(far_future());
+    let file = TargetFile::from_bytes(b"data", &[HashAlgorithm::Sha256]);
+    targets.targets.insert("file".to_owned(), file);
+    let as_written = serde_json::to_value(&targets).unwrap();
+    let mut uppercase_digest = as_written.clone();
+    let digest = &mut uppercase_digest["targets"]["file"]["hashes"]["sha256"];
+    *digest = json!(digest.as_str().unwrap().to_uppercase());
+    let mut null_custom = as_written.clone();
+    null_custom["targets"]["file"]["custom"] = Value::Null;
+    let mut null_delegations = as_written.clone();
+    null_delegations["delegations"] = Value::Null;
+
+    for (case, payload, encodable) in [
+        ("as tuffet writes it", as_written, true),
+        ("an uppercase digest", uppercase_digest, false),
+        ("a null custom", null_custom, false),
+        ("null delegations", null_delegations, false),
+    ] {
+        // Signed as another implementation would.
+        let sig = signer.sign(&Json::canonicalize(&payload).unwrap()).unwrap();
+        let signatures = json!([{"keyid": keyid.as_str(), "sig": hex::encode(sig)}]);
+        let document = json!({"signed": payload, "signatures": signatures});
+        let received = Metadata::<Targets>::from_bytes(&serde_json::to_vec(&document).unwrap());
+        let received = received.unwrap();
+        root.verify_role(&received).unwrap();
+
+        match received.to_bytes() {
+            Ok(bytes) => {
+                assert!(encodable, "{case}");
+                let reencoded = Metadata::<Targets>::from_bytes(&bytes).unwrap();
+                root.verify_role(&reencoded).unwrap();
+            }
+            Err(error) => {
+                assert_matches!(error, Error::Encode(_), "{case}");
+                assert!(!encodable, "{case}");
+            }
+        }
+    }
 }
 
 /// Signing again with a key replaces its earlier signature, so that
